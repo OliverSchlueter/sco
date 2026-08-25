@@ -47,7 +47,19 @@ func (e *Endpoint) ForwardTcpConn(conn net.Conn) error {
 	return nil
 }
 
-func (e *Endpoint) ForwardHttpReq(req http.Request) error {
+func (e *Endpoint) ForwardHttpReq(req *http.Request) (*http.Response, error) {
+	req.URL.Host = e.Address()
+	req.Host = e.Address()
+	req.RemoteAddr = e.Address()
+	req.Header.Set("X-Forwarded-For", e.Address())
+	req.Header.Set("X-Forwarded-Host", req.Host)
+	req.Header.Set("X-Forwarded-Proto", "http")
+	req.Header.Set("X-Real-IP", e.Address())
 
-	return nil
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
 }

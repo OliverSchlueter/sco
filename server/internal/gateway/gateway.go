@@ -2,8 +2,10 @@ package gateway
 
 import (
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
+	"net/http"
 
 	"github.com/OliverSchlueter/goutils/sloki"
 	"github.com/OliverSchlueter/sco-server/internal/cluster"
@@ -25,7 +27,7 @@ func (g *Gateway) StartPublicServers() error {
 			if service.Type == cluster.ServiceTypeTCP {
 				g.startTcpServer(service)
 			} else if service.Type == cluster.ServiceTypeHTTP {
-				// TODO start http server
+				g.startHttpServer(service)
 			} else {
 				return fmt.Errorf("unknown service type: %s", service.Type)
 			}
@@ -37,10 +39,15 @@ func (g *Gateway) StartPublicServers() error {
 
 func (g *Gateway) startTcpServer(service *cluster.Service) {
 	for ctrPort, hostPort := range service.Ports {
-		go func() {
+		go func(service *cluster.Service, ctrPort, hostPort string) {
 			ln, err := net.Listen("tcp", ":"+hostPort)
 			if err != nil {
-				slog.Error("Could not listen on port", slog.String("port", hostPort), sloki.WrapError(err))
+				slog.Error(
+					"Could not start TCP server",
+					slog.String("service", service.Name),
+					slog.String("port", hostPort),
+					sloki.WrapError(err),
+				)
 				return
 			}
 
@@ -60,7 +67,7 @@ func (g *Gateway) startTcpServer(service *cluster.Service) {
 
 					endpoint := service.PickEndpoint(ctrPort)
 					if endpoint == nil {
-						slog.Error("No endpoint found for port", slog.String("port", ctrPort))
+						slog.Error("No endpoint found", slog.String("service", service.Name))
 						conn.Close()
 						return
 					}
@@ -73,7 +80,13 @@ func (g *Gateway) startTcpServer(service *cluster.Service) {
 					)
 
 					if err := endpoint.ForwardTcpConn(conn); err != nil {
-						slog.Error("Could not forward connection", sloki.WrapError(err))
+						slog.Error(
+							"Could not forward TCP connection",
+							slog.String("service", service.Name),
+							slog.String("public_port", hostPort),
+							slog.String("endpoint", endpoint.Address()),
+							sloki.WrapError(err),
+						)
 						conn.Close()
 						return
 					}
@@ -86,6 +99,73 @@ func (g *Gateway) startTcpServer(service *cluster.Service) {
 					)
 				}(conn)
 			}
-		}()
+		}(service, ctrPort, hostPort)
+	}
+}
+
+func (g *Gateway) startHttpServer(service *cluster.Service) {
+	for ctrPort, hostPort := range service.Ports {
+		go func(service *cluster.Service, ctrPort, hostPort string) {
+			mux := http.NewServeMux()
+
+			mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				endpoint := service.PickEndpoint(ctrPort)
+				if endpoint == nil {
+					slog.Error("No endpoint found", slog.String("service", service.Name))
+					http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
+					return
+				}
+
+				slog.Debug(
+					"Forwarding HTTP request",
+					slog.String("service", service.Name),
+					slog.String("public_port", hostPort),
+					slog.String("endpoint", endpoint.Address()),
+				)
+
+				resp, err := endpoint.ForwardHttpReq(r)
+				if err != nil {
+					slog.Error(
+						"Could not forward HTTP request",
+						slog.String("service", service.Name),
+						slog.String("public_port", hostPort),
+						slog.String("endpoint", endpoint.Address()),
+						sloki.WrapError(err),
+					)
+					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+					return
+				}
+
+				w.WriteHeader(resp.StatusCode)
+				io.Copy(w, resp.Body)
+				resp.Body.Close()
+
+				slog.Debug(
+					"Forwarded HTTP request",
+					slog.String("service", service.Name),
+					slog.String("public_port", hostPort),
+					slog.String("endpoint", endpoint.Address()),
+				)
+			}))
+
+			err := http.ListenAndServe(":"+hostPort, mux)
+			if err != nil {
+				slog.Error(
+					"Could not start HTTP server",
+					slog.String("service", service.Name),
+					slog.String("port", hostPort),
+					sloki.WrapError(err),
+				)
+				return
+			}
+
+			slog.Info(
+				"Started public TCP server",
+				slog.String("service", service.Name),
+				slog.String("port", hostPort),
+			)
+
+			<-make(chan struct{})
+		}(service, ctrPort, hostPort)
 	}
 }

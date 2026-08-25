@@ -32,9 +32,33 @@ func testGateway() {
 	err := cs.Add(&cluster.Cluster{
 		Name: "fun-cluster",
 		Services: []*cluster.Service{
+			//{
+			//	Type:                cluster.ServiceTypeTCP,
+			//	Name:                "tcp-service",
+			//	Image:               "nginx:latest",
+			//	Ports:               map[string]string{"80": "8080"},
+			//	MaxCPU:              1,
+			//	MaxMemory:           200,
+			//	Replicas:            5,
+			//	LoadBalanceStrategy: cluster.LoadBalanceStrategyRoundRobin,
+			//	Endpoints: map[string][]*cluster.Endpoint{
+			//		"80": {
+			//			{
+			//				NodeID: "node-1",
+			//				Host:   "127.0.0.1",
+			//				Port:   "8090",
+			//			},
+			//			{
+			//				NodeID: "node-1",
+			//				Host:   "127.0.0.1",
+			//				Port:   "8091",
+			//			},
+			//		},
+			//	},
+			//},
 			{
 				Type:                cluster.ServiceTypeTCP,
-				Name:                "nginx",
+				Name:                "http-service",
 				Image:               "nginx:latest",
 				Ports:               map[string]string{"80": "8080"},
 				MaxCPU:              1,
@@ -46,12 +70,7 @@ func testGateway() {
 						{
 							NodeID: "node-1",
 							Host:   "127.0.0.1",
-							Port:   "8090", // Forward to 8090 on this machine
-						},
-						{
-							NodeID: "node-1",
-							Host:   "127.0.0.1",
-							Port:   "8091", // Forward to 8090 on this machine
+							Port:   "8090",
 						},
 					},
 				},
