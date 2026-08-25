@@ -79,7 +79,7 @@ func (g *Gateway) startTcpServer(service *cluster.Service) {
 						slog.String("endpoint", endpoint.Address()),
 					)
 
-					if err := endpoint.ForwardTcpConn(conn); err != nil {
+					if err := g.forwardTcpConn(endpoint, conn); err != nil {
 						slog.Error(
 							"Could not forward TCP connection",
 							slog.String("service", service.Name),
@@ -123,7 +123,7 @@ func (g *Gateway) startHttpServer(service *cluster.Service) {
 					slog.String("endpoint", endpoint.Address()),
 				)
 
-				resp, err := endpoint.ForwardHttpReq(r)
+				resp, err := g.forwardHttpReq(endpoint, r)
 				if err != nil {
 					slog.Error(
 						"Could not forward HTTP request",
