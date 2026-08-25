@@ -1,0 +1,12 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="sco-server-cli" type="GoApplicationRunConfiguration" factoryName="Go Application">
+    <module name="sco" />
+    <working_directory value="$PROJECT_DIR$/server" />
+    <sudo value="true" />
+    <kind value="PACKAGE" />
+    <package value="github.com/OliverSchlueter/sco-server/cmd/cli" />
+    <directory value="$PROJECT_DIR$" />
+    <auto_managed_config_id value="$PROJECT_DIR$/server/cmd/cli" />
+    <method v="2" />
+  </configuration>
+</component>

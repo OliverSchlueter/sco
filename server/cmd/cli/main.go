@@ -7,6 +7,7 @@ import (
 	"github.com/OliverSchlueter/goutils/sloki"
 	"github.com/OliverSchlueter/sco-server/internal/cluster"
 	"github.com/OliverSchlueter/sco-server/internal/gateway"
+	"github.com/OliverSchlueter/sco-server/internal/node"
 	"github.com/OliverSchlueter/sco-server/internal/runtime"
 )
 
@@ -22,7 +23,21 @@ func main() {
 	})
 	slog.SetDefault(slog.New(logService))
 
-	testGateway()
+	testNode()
+}
+
+func testNode() {
+	n := node.Node{
+		ID:         "node-1",
+		Host:       "localhost",
+		MaxCPU:     14,
+		UsedCPU:    4,
+		MaxMemory:  24 * 1024 * 1024 * 1024,
+		UsedMemory: 8 * 1024 * 1024 * 1024,
+	}
+	if err := n.Ping(); err != nil {
+		panic(err)
+	}
 }
 
 func testGateway() {
