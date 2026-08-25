@@ -33,13 +33,14 @@ func testGateway() {
 		Name: "fun-cluster",
 		Services: []*cluster.Service{
 			{
-				Type:      cluster.ServiceTypeTCP,
-				Name:      "nginx",
-				Image:     "nginx:latest",
-				Ports:     map[string]string{"80": "8080"},
-				MaxCPU:    1,
-				MaxMemory: 200,
-				Replicas:  5,
+				Type:                cluster.ServiceTypeTCP,
+				Name:                "nginx",
+				Image:               "nginx:latest",
+				Ports:               map[string]string{"80": "8080"},
+				MaxCPU:              1,
+				MaxMemory:           200,
+				Replicas:            5,
+				LoadBalanceStrategy: cluster.LoadBalanceStrategyRoundRobin,
 				Endpoints: map[string][]*cluster.Endpoint{
 					"80": {
 						{

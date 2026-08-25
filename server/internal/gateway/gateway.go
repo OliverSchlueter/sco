@@ -74,6 +74,7 @@ func (g *Gateway) startTcpServer(service *cluster.Service) {
 
 					if err := endpoint.ForwardTcpConn(conn); err != nil {
 						slog.Error("Could not forward connection", sloki.WrapError(err))
+						conn.Close()
 						return
 					}
 
