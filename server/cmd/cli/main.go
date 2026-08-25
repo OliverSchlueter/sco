@@ -5,6 +5,8 @@ import (
 	"log/slog"
 
 	"github.com/OliverSchlueter/goutils/sloki"
+	"github.com/OliverSchlueter/sco-server/internal/cluster"
+	"github.com/OliverSchlueter/sco-server/internal/gateway"
 	"github.com/OliverSchlueter/sco-server/internal/runtime"
 )
 
@@ -20,10 +22,55 @@ func main() {
 	})
 	slog.SetDefault(slog.New(logService))
 
-	test()
+	testGateway()
 }
 
-func test() {
+func testGateway() {
+	cs := cluster.NewStore()
+
+	// Add example cluster
+	err := cs.Add(&cluster.Cluster{
+		Name: "fun-cluster",
+		Services: []*cluster.Service{
+			{
+				Type:      cluster.ServiceTypeTCP,
+				Name:      "nginx",
+				Image:     "nginx:latest",
+				Ports:     map[string]string{"80": "8080"},
+				MaxCPU:    1,
+				MaxMemory: 200,
+				Replicas:  5,
+				Endpoints: map[string][]*cluster.Endpoint{
+					"80": {
+						{
+							NodeID: "node-1",
+							Host:   "127.0.0.1",
+							Port:   "8090", // Forward to 8090 on this machine
+						},
+						{
+							NodeID: "node-1",
+							Host:   "127.0.0.1",
+							Port:   "8091", // Forward to 8090 on this machine
+						},
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	gw := gateway.NewGateway(cs)
+	if err := gw.StartPublicServers(); err != nil {
+		panic(err)
+	}
+
+	c := make(chan struct{})
+	<-c
+}
+
+func testDockerRuntime() {
 	rt, err := runtime.NewDockerRuntime()
 	if err != nil {
 		panic(err)
