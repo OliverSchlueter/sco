@@ -1,0 +1,33 @@
+name: Test
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'server/**'
+  workflow_dispatch:
+
+jobs:
+  sco-server:
+    name: sco-server
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.27'
+          check-latest: true
+          cache-dependency-path: "**/*.sum"
+
+      - name: Install dependencies
+        run: go work sync
+
+      - name: Build
+        run: go build ./server/cmd/cli/main.go
+
+      - name: Test
+        run: go test ./server/... -v
