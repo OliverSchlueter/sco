@@ -8,6 +8,8 @@ package protocol
 const (
 	StatusCodeOK uint16 = 200
 
+	StatusInvalidMessage uint16 = 400
+
 	StatusInternalError   uint16 = 500
 	StatusCommandNotFound uint16 = 501
 )

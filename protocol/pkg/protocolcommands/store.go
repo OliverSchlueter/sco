@@ -8,8 +8,7 @@ import (
 	"github.com/OliverSchlueter/sco-protocol/pkg/protocol"
 )
 
-// Handler is the function signature for a command handler
-type Handler func(cmd *protocol.Command) (*protocol.Response, error)
+type Handler func(ctx *ConnCtx, msg *protocol.Message, cmd *protocol.Command) (*protocol.Response, error)
 
 type Middleware func(next Handler) Handler
 
@@ -50,7 +49,7 @@ func (s *Store) RegisterMiddleware(middleware Middleware) {
 }
 
 // Execute executes a command and returns the response
-func (s *Store) Execute(cmd *protocol.Command) *protocol.Response {
+func (s *Store) Execute(ctx *ConnCtx, msg *protocol.Message, cmd *protocol.Command) *protocol.Response {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -66,7 +65,7 @@ func (s *Store) Execute(cmd *protocol.Command) *protocol.Response {
 		handler = v(handler)
 	}
 
-	response, err := handler(cmd)
+	response, err := handler(ctx, msg, cmd)
 	if err != nil {
 		return &protocol.Response{
 			Code:    protocol.StatusInternalError,
