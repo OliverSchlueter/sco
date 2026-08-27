@@ -84,7 +84,19 @@ func (s *Server) ConnectTo(addr string) error {
 
 	s.clientConn = conn
 
-	go s.handleConnection(conn)
+	go func() {
+		ctx := &protocolcommandstore.ConnCtx{
+			ID:           "client-connection",
+			Conn:         conn,
+			Ctx:          context.Background(),
+			LastActivity: time.Now().UnixMilli(),
+		}
+		for {
+			if s.handleMessage(ctx) {
+				break
+			}
+		}
+	}()
 	return nil
 }
 

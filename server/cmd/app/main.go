@@ -21,23 +21,25 @@ func main() {
 	})
 	slog.SetDefault(slog.New(logService))
 
-	agentServer := protocolserver.New("8081", protocolcommandstore.New())
-	if err := agentServer.ConnectTo("localhost:8080"); err != nil {
-		slog.Error("Error connecting to server", "err", err)
-		return
-	}
-
-	resp, err := agentServer.SendCmd(&protocol.Command{
-		ReqID:   420,
-		ID:      1,
-		Payload: []byte("Moin Meister"),
-	})
-	if err != nil {
-		slog.Error("Error sending command", "err", err)
-		return
-	}
-	slog.Info("Response", "resp_code", resp.Code, "resp_payload", string(resp.Payload))
+	startScoServer()
 
 	c := make(chan struct{})
 	<-c
+}
+
+func startScoServer() {
+	cs := protocolcommandstore.New()
+	err := cs.RegisterHandler(1, func(ctx *protocolcommandstore.ConnCtx, msg *protocol.Message, cmd *protocol.Command) (*protocol.Response, error) {
+		// echo back the payload
+		return &protocol.Response{
+			Code:    protocol.StatusCodeOK,
+			Payload: cmd.Payload,
+		}, nil
+	})
+	if err != nil {
+		slog.Error("Failed to register handler", sloki.WrapError(err))
+		panic(err)
+	}
+	srv := protocolserver.New("8080", cs)
+	go srv.Start()
 }
