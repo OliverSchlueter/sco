@@ -1,4 +1,4 @@
-package protocolcommands
+package protocolcommandstore
 
 import (
 	"context"

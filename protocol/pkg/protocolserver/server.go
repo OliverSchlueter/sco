@@ -12,22 +12,22 @@ import (
 	"github.com/OliverSchlueter/goutils/idgen"
 	"github.com/OliverSchlueter/goutils/sloki"
 	"github.com/OliverSchlueter/sco-protocol/pkg/protocol"
-	"github.com/OliverSchlueter/sco-protocol/pkg/protocolcommands"
+	"github.com/OliverSchlueter/sco-protocol/pkg/protocolcommandstore"
 )
 
 type Server struct {
 	port string
-	cs   *protocolcommands.Store
+	cs   *protocolcommandstore.Store
 
 	connectionsMu sync.RWMutex
-	connections   map[string]*protocolcommands.ConnCtx
+	connections   map[string]*protocolcommandstore.ConnCtx
 }
 
-func New(port string, commandStore *protocolcommands.Store) *Server {
+func New(port string, commandStore *protocolcommandstore.Store) *Server {
 	return &Server{
 		port:        port,
 		cs:          commandStore,
-		connections: make(map[string]*protocolcommands.ConnCtx),
+		connections: make(map[string]*protocolcommandstore.ConnCtx),
 	}
 }
 
@@ -55,7 +55,7 @@ func (s *Server) Start() error {
 func (s *Server) handleConnection(conn net.Conn) {
 	defer conn.Close()
 
-	ctx := &protocolcommands.ConnCtx{
+	ctx := &protocolcommandstore.ConnCtx{
 		ID:   idgen.GenerateID(16),
 		Conn: conn,
 		Ctx:  context.Background(),
@@ -81,7 +81,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 
 // handleMessage reads and processes a single message from the connection.
 // It returns true if the connection should be closed.
-func (s *Server) handleMessage(ctx *protocolcommands.ConnCtx) bool {
+func (s *Server) handleMessage(ctx *protocolcommandstore.ConnCtx) bool {
 	conn := ctx.Conn
 
 	frameBuf := protocol.GetRequestBufferFromPool()
