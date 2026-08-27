@@ -23,7 +23,7 @@ func main() {
 	})
 	slog.SetDefault(slog.New(logService))
 
-	testNode()
+	testDockerRuntime()
 }
 
 func testNode() {

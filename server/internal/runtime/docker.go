@@ -119,6 +119,9 @@ func (r *DockerRuntime) createContainer(ctx context.Context, cfg TaskConfig) (st
 		Name: cfg.Name,
 		Config: &container.Config{
 			Image: cfg.Image,
+			Labels: map[string]string{
+				"de.oliver.sco.task": "true",
+			},
 		},
 		HostConfig: &container.HostConfig{
 			PortBindings: portBindings,
@@ -160,6 +163,11 @@ func (r *DockerRuntime) GetTaskStatus(ctx context.Context, taskID string) (Statu
 		return Unknown, err
 	}
 
+	// check if the container is a sco task
+	if _, exists := summary.Labels["de.oliver.sco.task"]; !exists {
+		return Unknown, nil
+	}
+
 	switch summary.State {
 	case container.StateRunning:
 		return Running, nil
@@ -171,7 +179,9 @@ func (r *DockerRuntime) GetTaskStatus(ctx context.Context, taskID string) (Statu
 }
 
 func (r *DockerRuntime) ListTasks(ctx context.Context) (map[string]Status, error) {
-	list, err := r.client.ContainerList(ctx, mclient.ContainerListOptions{})
+	list, err := r.client.ContainerList(ctx, mclient.ContainerListOptions{
+		Filters: make(mclient.Filters).Add("label", "de.oliver.sco.task=true"),
+	})
 	if err != nil {
 		return nil, err
 	}
