@@ -6,7 +6,9 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/OliverSchlueter/goutils/idgen"
@@ -21,6 +23,10 @@ type Server struct {
 
 	connectionsMu sync.RWMutex
 	connections   map[string]*protocolcommandstore.ConnCtx
+
+	requestIDCounter atomic.Uint32
+	pendingCmds      map[uint32]chan *protocol.Response
+	pendingCmdsMu    sync.Mutex
 }
 
 func New(port string, commandStore *protocolcommandstore.Store) *Server {
@@ -28,16 +34,34 @@ func New(port string, commandStore *protocolcommandstore.Store) *Server {
 		port:        port,
 		cs:          commandStore,
 		connections: make(map[string]*protocolcommandstore.ConnCtx),
+		pendingCmds: make(map[uint32]chan *protocol.Response),
 	}
+}
+
+func (s *Server) GetConnections() map[string]*protocolcommandstore.ConnCtx {
+	s.connectionsMu.RLock()
+	defer s.connectionsMu.RUnlock()
+
+	return s.connections
+}
+
+func (s *Server) GetConnection(id string) *protocolcommandstore.ConnCtx {
+	s.connectionsMu.RLock()
+	defer s.connectionsMu.RUnlock()
+
+	return s.connections[id]
 }
 
 // Start starts the server and listens for incoming connections.
 // It blocks until the server is stopped.
-func (s *Server) Start() error {
+func (s *Server) Start() {
 	ln, err := net.Listen("tcp", ":"+s.port)
 	if err != nil {
-		return err
+		slog.Error("Failed to start protocol server", sloki.WrapError(err))
+		return
 	}
+
+	slog.Debug("Protocol server started", slog.String("port", s.port))
 
 	for {
 		conn, err := ln.Accept()
@@ -106,23 +130,12 @@ func (s *Server) handleMessage(ctx *protocolcommandstore.ConnCtx) bool {
 		return false
 	}
 
-	startTime := time.Now()
-
 	msg := protocol.GetMessageFromPool()
 	defer protocol.PutMessageToPool(msg)
 	if err := protocol.V1.DecodeMessageInto(frame, msg); err != nil {
 		s.writeResponse(conn, &protocol.Response{
 			Code:    protocol.StatusInvalidMessage,
 			Payload: []byte(err.Error()),
-		})
-
-		return false
-	}
-
-	if msg.Type != byte(protocol.MessageTypeCommand) {
-		s.writeResponse(conn, &protocol.Response{
-			Code:    protocol.StatusInvalidMessage,
-			Payload: []byte("Only command messages are allowed"),
 		})
 
 		return false
@@ -137,14 +150,29 @@ func (s *Server) handleMessage(ctx *protocolcommandstore.ConnCtx) bool {
 		return false
 	}
 
+	switch msg.Type {
+	case byte(protocol.MessageTypeCommand):
+		return s.handleCommand(ctx, msg)
+	case byte(protocol.MessageTypeResponse):
+		return s.handleResponse(ctx, msg)
+	default:
+		s.writeResponse(conn, &protocol.Response{
+			Code:    protocol.StatusInvalidMessage,
+			Payload: []byte("Only command and response messages are allowed"),
+		})
+		return false
+	}
+}
+
+func (s *Server) handleCommand(ctx *protocolcommandstore.ConnCtx, msg *protocol.Message) bool {
 	cmd := protocol.GetCommandFromPool()
 	defer protocol.PutCommandToPool(cmd)
+
 	if err := protocol.V1.DecodeCommandInto(msg, cmd); err != nil {
-		s.writeResponse(conn, &protocol.Response{
+		s.writeResponse(ctx.Conn, &protocol.Response{
 			Code:    protocol.StatusInvalidMessage,
 			Payload: []byte(err.Error()),
 		})
-
 		return false
 	}
 
@@ -153,20 +181,45 @@ func (s *Server) handleMessage(ctx *protocolcommandstore.ConnCtx) bool {
 	// Ensure the response has the same ReqID as the command for proper correlation on the client side
 	resp.ReqID = cmd.ReqID
 
-	s.writeResponse(conn, resp)
+	s.writeResponse(ctx.Conn, resp)
 
-	// Update last activity timestamp for cleanup purposes
-	ctx.LastActivity = startTime.UnixMilli()
-
-	elapsedTime := time.Since(startTime)
-
-	slog.Info(
+	slog.Debug(
 		"Processed command",
 		slog.String("conn_id", ctx.ID),
 		slog.Int("command_id", int(cmd.ID)),
 		slog.String("payload", string(cmd.Payload)),
-		slog.Duration("duration", elapsedTime),
 	)
+	return false
+}
+
+func (s *Server) handleResponse(ctx *protocolcommandstore.ConnCtx, msg *protocol.Message) bool {
+	resp := protocol.GetResponseFromPool()
+	defer protocol.PutResponseToPool(resp)
+
+	err := protocol.V1.DecodeResponseInto(msg, resp)
+	if err != nil {
+		s.writeResponse(ctx.Conn, &protocol.Response{
+			Code:    protocol.StatusInvalidMessage,
+			Payload: []byte(err.Error()),
+		})
+		return false
+	}
+
+	s.pendingCmdsMu.Lock()
+	respChan, exists := s.pendingCmds[resp.ReqID]
+	if !exists {
+		s.pendingCmdsMu.Unlock()
+		slog.Warn(
+			"Received response with unknown ID",
+			slog.String("conn_id", ctx.ID),
+			slog.String("response_id", strconv.Itoa(int(resp.ReqID))),
+		)
+		return false
+	}
+
+	delete(s.pendingCmds, resp.ReqID)
+	s.pendingCmdsMu.Unlock()
+	respChan <- resp
 
 	return false
 }
@@ -189,5 +242,58 @@ func (s *Server) writeResponse(conn net.Conn, resp *protocol.Response) {
 	msgDataBuf = protocol.V1.EncodeMessageInto(msg, msgDataBuf)
 	if err := protocol.V1.WriteFrame(conn, msgDataBuf); err != nil {
 		slog.Warn("Failed to write response", sloki.WrapError(err))
+	}
+}
+
+// SendCmd sends a command to a client and waits for the response.
+func (s *Server) SendCmd(client *protocolcommandstore.ConnCtx, cmd *protocol.Command) (*protocol.Response, error) {
+	starTime := time.Now()
+
+	respChan := make(chan *protocol.Response, 1)
+	s.pendingCmdsMu.Lock()
+	cmd.ReqID = s.requestIDCounter.Add(1)
+	s.pendingCmds[cmd.ReqID] = respChan
+	s.pendingCmdsMu.Unlock()
+
+	cmdMsg := protocol.Message{
+		ProtocolVersion: byte(protocol.Version1),
+		Flags:           0x00,
+		Type:            byte(protocol.MessageTypeCommand),
+		Payload:         protocol.V1.EncodeCommand(cmd),
+	}
+
+	cmdData := protocol.V1.EncodeMessage(&cmdMsg)
+	if err := protocol.V1.WriteFrame(client.Conn, cmdData); err != nil {
+		return nil, err
+	}
+
+	slog.Debug(
+		"Sent command to server",
+		slog.String("conn_id", client.ID),
+		slog.String("id", strconv.Itoa(int(cmd.ID))),
+		slog.String("payload_size", strconv.Itoa(len(cmd.Payload))),
+	)
+
+	// Wait for the response or a timeout
+	select {
+	case resp := <-respChan:
+		s.pendingCmdsMu.Lock()
+		delete(s.pendingCmds, cmd.ReqID)
+		s.pendingCmdsMu.Unlock()
+
+		duration := time.Since(starTime)
+		slog.Debug(
+			"Received response from server",
+			slog.String("conn_id", client.ID),
+			slog.String("status_code", strconv.Itoa(int(resp.Code))),
+			slog.String("payload_size", strconv.Itoa(len(resp.Payload))),
+			slog.Duration("duration", duration),
+		)
+		return resp, nil
+	case <-time.After(30 * time.Second):
+		s.pendingCmdsMu.Lock()
+		delete(s.pendingCmds, cmd.ReqID)
+		s.pendingCmdsMu.Unlock()
+		return nil, ErrCommandTimeout
 	}
 }

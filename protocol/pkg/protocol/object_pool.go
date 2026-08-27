@@ -28,6 +28,12 @@ var (
 			return &Command{}
 		},
 	}
+
+	responsePool = sync.Pool{
+		New: func() any {
+			return &Response{}
+		},
+	}
 )
 
 // GetRequestBufferFromPool retrieves a byte slice from the request buffer pool.
@@ -83,4 +89,17 @@ func PutCommandToPool(c *Command) {
 	c.Payload = nil
 
 	commandPool.Put(c)
+}
+
+func GetResponseFromPool() *Response {
+	return responsePool.Get().(*Response)
+}
+
+func PutResponseToPool(r *Response) {
+	// reset fields
+	r.ReqID = 0
+	r.Code = 0
+	r.Payload = nil
+
+	responsePool.Put(r)
 }
