@@ -26,8 +26,14 @@ jobs:
       - name: Install dependencies
         run: go work sync
 
-      - name: Build
+      - name: Build sco-server-cli
         run: go build ./server/cmd/cli/main.go
 
-      - name: Test
+      - name: Test sco-server-cli
+        run: go test ./server/... -v
+
+      - name: Build sco-protocol
+        run: go build ./protocol/cmd/test/main.go
+
+      - name: Test sco-protocol
         run: go test ./server/... -v
