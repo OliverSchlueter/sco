@@ -39,3 +39,26 @@ jobs:
 
       - name: Test sco-protocol
         run: go test ./protocol/... -v
+
+  sco-protocol:
+    name: sco-protocol
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.27'
+          check-latest: true
+          cache-dependency-path: "**/*.sum"
+
+      - name: Install dependencies
+        run: go work sync
+
+      - name: Build sco-protocol
+        run: go build ./protocol/cmd/test/main.go
+
+      - name: Test sco-protocol
+        run: go test ./protocol/... -v
