@@ -54,8 +54,18 @@ func (p *ProtoV1) WriteFrame(conn net.Conn, data []byte) error {
 	var lenBuf [4]byte
 	binary.BigEndian.PutUint32(lenBuf[:], uint32(len(data)))
 
-	_, err := conn.Write(append(lenBuf[:], data...))
-	return err
+	frame := append(lenBuf[:], data...)
+	for len(frame) > 0 {
+		n, err := conn.Write(frame)
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return io.ErrShortWrite
+		}
+		frame = frame[n:]
+	}
+	return nil
 }
 
 // DecodeMessageInto decodes a Message from the given byte slice into the provided Message struct.
@@ -198,11 +208,6 @@ func (p *ProtoV1) DecodeCommandInto(msg *Message, target *Command) error {
 	target.ID = binary.BigEndian.Uint16(data[offset:])
 	offset += 2
 
-	dbNameLen := int(binary.BigEndian.Uint16(data[offset:]))
-	offset += 2
-	if len(data) < offset+dbNameLen+2 {
-		return ErrPayloadTooShort
-	}
 	payloadLen := int(binary.BigEndian.Uint32(data[offset:]))
 	offset += 4
 	if len(data) < offset+payloadLen {

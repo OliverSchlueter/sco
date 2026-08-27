@@ -78,6 +78,7 @@ func GetCommandFromPool() *Command {
 
 func PutCommandToPool(c *Command) {
 	// reset fields
+	c.ReqID = 0
 	c.ID = 0
 	c.Payload = nil
 
