@@ -24,6 +24,7 @@ type Server struct {
 	connectionsMu sync.RWMutex
 	connections   map[string]*protocolcommandstore.ConnCtx
 
+	clientConn       net.Conn
 	requestIDCounter atomic.Uint32
 	pendingCmds      map[uint32]chan *protocol.Response
 	pendingCmdsMu    sync.Mutex
@@ -72,6 +73,19 @@ func (s *Server) Start() {
 
 		go s.handleConnection(conn)
 	}
+}
+
+// ConnectTo establishes a connection to a remote server.
+func (s *Server) ConnectTo(addr string) error {
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		return err
+	}
+
+	s.clientConn = conn
+
+	go s.handleConnection(conn)
+	return nil
 }
 
 // handleConnection manages the lifecycle of a single client connection.
@@ -193,10 +207,7 @@ func (s *Server) handleCommand(ctx *protocolcommandstore.ConnCtx, msg *protocol.
 }
 
 func (s *Server) handleResponse(ctx *protocolcommandstore.ConnCtx, msg *protocol.Message) bool {
-	resp := protocol.GetResponseFromPool()
-	defer protocol.PutResponseToPool(resp)
-
-	err := protocol.V1.DecodeResponseInto(msg, resp)
+	resp, err := protocol.V1.DecodeResponse(msg)
 	if err != nil {
 		s.writeResponse(ctx.Conn, &protocol.Response{
 			Code:    protocol.StatusInvalidMessage,
@@ -246,7 +257,11 @@ func (s *Server) writeResponse(conn net.Conn, resp *protocol.Response) {
 }
 
 // SendCmd sends a command to a client and waits for the response.
-func (s *Server) SendCmd(client *protocolcommandstore.ConnCtx, cmd *protocol.Command) (*protocol.Response, error) {
+func (s *Server) SendCmd(cmd *protocol.Command) (*protocol.Response, error) {
+	if s.clientConn == nil {
+		return nil, ErrClientNotConnected
+	}
+
 	starTime := time.Now()
 
 	respChan := make(chan *protocol.Response, 1)
@@ -263,13 +278,12 @@ func (s *Server) SendCmd(client *protocolcommandstore.ConnCtx, cmd *protocol.Com
 	}
 
 	cmdData := protocol.V1.EncodeMessage(&cmdMsg)
-	if err := protocol.V1.WriteFrame(client.Conn, cmdData); err != nil {
+	if err := protocol.V1.WriteFrame(s.clientConn, cmdData); err != nil {
 		return nil, err
 	}
 
 	slog.Debug(
 		"Sent command to server",
-		slog.String("conn_id", client.ID),
 		slog.String("id", strconv.Itoa(int(cmd.ID))),
 		slog.String("payload_size", strconv.Itoa(len(cmd.Payload))),
 	)
@@ -284,7 +298,6 @@ func (s *Server) SendCmd(client *protocolcommandstore.ConnCtx, cmd *protocol.Com
 		duration := time.Since(starTime)
 		slog.Debug(
 			"Received response from server",
-			slog.String("conn_id", client.ID),
 			slog.String("status_code", strconv.Itoa(int(resp.Code))),
 			slog.String("payload_size", strconv.Itoa(len(resp.Payload))),
 			slog.Duration("duration", duration),
