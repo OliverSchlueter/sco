@@ -6,6 +6,8 @@ on:
       - main
     paths:
       - 'server/**'
+      - 'protocol/**'
+      - 'agent/**'
   workflow_dispatch:
 
 jobs:
