@@ -38,4 +38,4 @@ jobs:
         run: go build ./protocol/cmd/test/main.go
 
       - name: Test sco-protocol
-        run: go test ./server/... -v
+        run: go test ./protocol/... -v
