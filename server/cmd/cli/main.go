@@ -6,6 +6,7 @@ import (
 
 	"github.com/OliverSchlueter/goutils/sloki"
 	"github.com/OliverSchlueter/sco-server/internal/cluster"
+	"github.com/OliverSchlueter/sco-server/internal/cluster/clusterstore"
 	"github.com/OliverSchlueter/sco-server/internal/gateway"
 	"github.com/OliverSchlueter/sco-server/internal/node"
 	"github.com/OliverSchlueter/sco-server/internal/node/nodestore"
@@ -45,7 +46,7 @@ func testNode() {
 }
 
 func testGateway() {
-	cs := cluster.NewStore()
+	cs := clusterstore.New()
 
 	// Add example cluster
 	err := cs.Add(&cluster.Cluster{

@@ -9,13 +9,14 @@ import (
 
 	"github.com/OliverSchlueter/goutils/sloki"
 	"github.com/OliverSchlueter/sco-server/internal/cluster"
+	"github.com/OliverSchlueter/sco-server/internal/cluster/clusterstore"
 )
 
 type Gateway struct {
-	clusterStore *cluster.Store
+	clusterStore *clusterstore.Store
 }
 
-func NewGateway(clusterStore *cluster.Store) *Gateway {
+func NewGateway(clusterStore *clusterstore.Store) *Gateway {
 	return &Gateway{
 		clusterStore: clusterStore,
 	}
