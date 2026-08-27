@@ -8,6 +8,7 @@ import (
 	"github.com/OliverSchlueter/sco-server/internal/cluster"
 	"github.com/OliverSchlueter/sco-server/internal/gateway"
 	"github.com/OliverSchlueter/sco-server/internal/node"
+	"github.com/OliverSchlueter/sco-server/internal/node/nodestore"
 	"github.com/OliverSchlueter/sco-server/internal/runtime"
 )
 
@@ -23,7 +24,7 @@ func main() {
 	})
 	slog.SetDefault(slog.New(logService))
 
-	testDockerRuntime()
+	testNode()
 }
 
 func testNode() {
@@ -38,6 +39,9 @@ func testNode() {
 	if err := n.Ping(); err != nil {
 		panic(err)
 	}
+
+	ns := nodestore.New()
+	ns.Add(&n)
 }
 
 func testGateway() {
