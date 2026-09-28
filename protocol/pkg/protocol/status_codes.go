@@ -8,7 +8,9 @@ package protocol
 const (
 	StatusCodeOK uint16 = 200
 
-	StatusInvalidMessage uint16 = 400
+	StatusInvalidMessage     uint16 = 400
+	StatusInvalidAccessToken uint16 = 401
+	StatusNotAuthenticated   uint16 = 402
 
 	StatusInternalError   uint16 = 500
 	StatusCommandNotFound uint16 = 501
