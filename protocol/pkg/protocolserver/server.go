@@ -1,6 +1,7 @@
 package protocolserver
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -8,49 +9,52 @@ import (
 	"net"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 
-	"github.com/OliverSchlueter/goutils/idgen"
 	"github.com/OliverSchlueter/goutils/sloki"
 	"github.com/OliverSchlueter/sco-protocol/pkg/protocol"
 	"github.com/OliverSchlueter/sco-protocol/pkg/protocolcommandstore"
 )
+
+const commandTimeout = 30 * time.Second
 
 type Server struct {
 	port string
 	cs   *protocolcommandstore.Store
 
 	connectionsMu sync.RWMutex
-	connections   map[string]*protocolcommandstore.ConnCtx
-
-	clientConn       net.Conn
-	requestIDCounter atomic.Uint32
-	pendingCmds      map[uint32]chan *protocol.Response
-	pendingCmdsMu    sync.Mutex
+	connections   map[string]*connection
+	clientConn    *connection
 }
 
 func New(port string, commandStore *protocolcommandstore.Store) *Server {
 	return &Server{
 		port:        port,
 		cs:          commandStore,
-		connections: make(map[string]*protocolcommandstore.ConnCtx),
-		pendingCmds: make(map[uint32]chan *protocol.Response),
+		connections: make(map[string]*connection),
 	}
 }
 
+// GetConnections returns a snapshot of the accepted and outbound connections.
 func (s *Server) GetConnections() map[string]*protocolcommandstore.ConnCtx {
 	s.connectionsMu.RLock()
 	defer s.connectionsMu.RUnlock()
 
-	return s.connections
+	connections := make(map[string]*protocolcommandstore.ConnCtx, len(s.connections))
+	for id, conn := range s.connections {
+		connections[id] = conn.ConnCtx
+	}
+	return connections
 }
 
 func (s *Server) GetConnection(id string) *protocolcommandstore.ConnCtx {
 	s.connectionsMu.RLock()
 	defer s.connectionsMu.RUnlock()
 
-	return s.connections[id]
+	if conn := s.connections[id]; conn != nil {
+		return conn.ConnCtx
+	}
+	return nil
 }
 
 // Start starts the server and listens for incoming connections.
@@ -82,48 +86,47 @@ func (s *Server) ConnectTo(addr string) error {
 		return err
 	}
 
-	s.clientConn = conn
+	peer := newConnection(conn)
+	s.connectionsMu.Lock()
+	previous := s.clientConn
+	s.clientConn = peer
+	s.connections[peer.ID] = peer
+	s.connectionsMu.Unlock()
+	if previous != nil {
+		previous.close()
+	}
 
-	go func() {
-		ctx := &protocolcommandstore.ConnCtx{
-			ID:           "client-connection",
-			Conn:         conn,
-			Ctx:          context.Background(),
-			LastActivity: time.Now().UnixMilli(),
-		}
-		for {
-			if s.handleMessage(ctx) {
-				break
-			}
-		}
-	}()
+	go s.serveConnection(peer)
 	return nil
 }
 
 // handleConnection manages the lifecycle of a single client connection.
 // It reads messages in a loop until the connection is closed.
 func (s *Server) handleConnection(conn net.Conn) {
-	defer conn.Close()
-
-	ctx := &protocolcommandstore.ConnCtx{
-		ID:   idgen.GenerateID(16),
-		Conn: conn,
-		Ctx:  context.Background(),
-	}
+	peer := newConnection(conn)
 	s.connectionsMu.Lock()
-	s.connections[ctx.ID] = ctx
+	s.connections[peer.ID] = peer
 	s.connectionsMu.Unlock()
 
+	s.serveConnection(peer)
+}
+
+// serveConnection uses the same receive loop for accepted and outbound peers.
+func (s *Server) serveConnection(peer *connection) {
 	defer func() {
+		peer.close()
 		s.connectionsMu.Lock()
-		delete(s.connections, ctx.ID)
+		delete(s.connections, peer.ID)
+		if s.clientConn == peer {
+			s.clientConn = nil
+		}
 		s.connectionsMu.Unlock()
 	}()
 
-	slog.Debug("New connection established", slog.String("conn_id", ctx.ID))
+	slog.Debug("New connection established", slog.String("conn_id", peer.ID))
 
 	for {
-		if s.handleMessage(ctx) {
+		if s.handleMessage(peer) {
 			break
 		}
 	}
@@ -131,11 +134,11 @@ func (s *Server) handleConnection(conn net.Conn) {
 
 // handleMessage reads and processes a single message from the connection.
 // It returns true if the connection should be closed.
-func (s *Server) handleMessage(ctx *protocolcommandstore.ConnCtx) bool {
+func (s *Server) handleMessage(ctx *connection) bool {
 	conn := ctx.Conn
 
 	frameBuf := protocol.GetRequestBufferFromPool()
-	defer protocol.PutRequestBufferToPool(frameBuf)
+	defer func() { protocol.PutRequestBufferToPool(frameBuf) }()
 
 	frame, err := protocol.V1.ReadFrameInto(conn, frameBuf)
 	if err != nil {
@@ -145,7 +148,7 @@ func (s *Server) handleMessage(ctx *protocolcommandstore.ConnCtx) bool {
 		}
 
 		if errors.Is(err, protocol.ErrFrameLengthInvalid) {
-			s.writeResponse(conn, &protocol.Response{
+			s.writeResponse(ctx, &protocol.Response{
 				Code:    protocol.StatusInvalidMessage,
 				Payload: []byte(err.Error()),
 			})
@@ -153,61 +156,62 @@ func (s *Server) handleMessage(ctx *protocolcommandstore.ConnCtx) bool {
 			slog.Error("Failed to read frame", slog.String("conn_id", ctx.ID), sloki.WrapError(err))
 		}
 
-		return false
+		return true
 	}
+	frameBuf = frame
 
 	msg := protocol.GetMessageFromPool()
 	defer protocol.PutMessageToPool(msg)
 	if err := protocol.V1.DecodeMessageInto(frame, msg); err != nil {
-		s.writeResponse(conn, &protocol.Response{
+		return s.writeResponse(ctx, &protocol.Response{
 			Code:    protocol.StatusInvalidMessage,
 			Payload: []byte(err.Error()),
 		})
-
-		return false
 	}
 
 	if msg.ProtocolVersion != byte(protocol.Version1) {
-		s.writeResponse(conn, &protocol.Response{
+		return s.writeResponse(ctx, &protocol.Response{
 			Code:    protocol.StatusInvalidMessage,
 			Payload: []byte("Only protocol version 1 is supported"),
 		})
-
-		return false
 	}
 
 	switch msg.Type {
 	case byte(protocol.MessageTypeCommand):
-		return s.handleCommand(ctx, msg)
+		// Handlers may send a command back to this peer and wait for its reply.
+		// Keep reading responses, and give the handler its own payload buffer.
+		commandMsg := *msg
+		commandMsg.Payload = bytes.Clone(msg.Payload)
+		go s.handleCommand(ctx, &commandMsg)
+		return false
 	case byte(protocol.MessageTypeResponse):
 		return s.handleResponse(ctx, msg)
 	default:
-		s.writeResponse(conn, &protocol.Response{
+		return s.writeResponse(ctx, &protocol.Response{
 			Code:    protocol.StatusInvalidMessage,
 			Payload: []byte("Only command and response messages are allowed"),
 		})
-		return false
 	}
 }
 
-func (s *Server) handleCommand(ctx *protocolcommandstore.ConnCtx, msg *protocol.Message) bool {
+func (s *Server) handleCommand(ctx *connection, msg *protocol.Message) {
 	cmd := protocol.GetCommandFromPool()
 	defer protocol.PutCommandToPool(cmd)
 
 	if err := protocol.V1.DecodeCommandInto(msg, cmd); err != nil {
-		s.writeResponse(ctx.Conn, &protocol.Response{
+		s.writeResponse(ctx, &protocol.Response{
 			Code:    protocol.StatusInvalidMessage,
 			Payload: []byte(err.Error()),
 		})
-		return false
+		return
 	}
 
-	resp := s.cs.Execute(ctx, msg, cmd)
+	resp := s.cs.Execute(ctx.ConnCtx, msg, cmd)
 
 	// Ensure the response has the same ReqID as the command for proper correlation on the client side
 	resp.ReqID = cmd.ReqID
 
-	s.writeResponse(ctx.Conn, resp)
+	s.writeResponse(ctx, resp)
 
 	slog.Debug(
 		"Processed command",
@@ -215,23 +219,21 @@ func (s *Server) handleCommand(ctx *protocolcommandstore.ConnCtx, msg *protocol.
 		slog.Int("command_id", int(cmd.ID)),
 		slog.String("payload", string(cmd.Payload)),
 	)
-	return false
 }
 
-func (s *Server) handleResponse(ctx *protocolcommandstore.ConnCtx, msg *protocol.Message) bool {
+func (s *Server) handleResponse(ctx *connection, msg *protocol.Message) bool {
 	resp, err := protocol.V1.DecodeResponse(msg)
 	if err != nil {
-		s.writeResponse(ctx.Conn, &protocol.Response{
+		return s.writeResponse(ctx, &protocol.Response{
 			Code:    protocol.StatusInvalidMessage,
 			Payload: []byte(err.Error()),
 		})
-		return false
 	}
 
-	s.pendingCmdsMu.Lock()
-	respChan, exists := s.pendingCmds[resp.ReqID]
+	ctx.pendingCmdsMu.Lock()
+	respChan, exists := ctx.pendingCmds[resp.ReqID]
 	if !exists {
-		s.pendingCmdsMu.Unlock()
+		ctx.pendingCmdsMu.Unlock()
 		slog.Warn(
 			"Received response with unknown ID",
 			slog.String("conn_id", ctx.ID),
@@ -240,47 +242,101 @@ func (s *Server) handleResponse(ctx *protocolcommandstore.ConnCtx, msg *protocol
 		return false
 	}
 
-	delete(s.pendingCmds, resp.ReqID)
-	s.pendingCmdsMu.Unlock()
+	delete(ctx.pendingCmds, resp.ReqID)
+	ctx.pendingCmdsMu.Unlock()
+	// The receive buffer returns to the pool after this method completes.
+	resp.Payload = bytes.Clone(resp.Payload)
 	respChan <- resp
 
 	return false
 }
 
-func (s *Server) writeResponse(conn net.Conn, resp *protocol.Response) {
+// writeResponse returns true if the connection should be closed.
+func (s *Server) writeResponse(conn *connection, resp *protocol.Response) bool {
 	msg := protocol.GetMessageFromPool()
 	defer protocol.PutMessageToPool(msg)
 
 	payloadBuf := protocol.GetResponseBufferFromPool()
-	defer protocol.PutResponseBufferToPool(payloadBuf)
+	defer func() { protocol.PutResponseBufferToPool(payloadBuf) }()
 
 	msg.ProtocolVersion = byte(protocol.Version1)
 	msg.Flags = 0x00
 	msg.Type = byte(protocol.MessageTypeResponse)
-	msg.Payload = protocol.V1.EncodeResponseInto(resp, payloadBuf)
+	payloadBuf = protocol.V1.EncodeResponseInto(resp, payloadBuf)
+	msg.Payload = payloadBuf
 
 	msgDataBuf := protocol.GetResponseBufferFromPool()
-	defer protocol.PutResponseBufferToPool(msgDataBuf)
+	defer func() { protocol.PutResponseBufferToPool(msgDataBuf) }()
 
 	msgDataBuf = protocol.V1.EncodeMessageInto(msg, msgDataBuf)
-	if err := protocol.V1.WriteFrame(conn, msgDataBuf); err != nil {
+	ctx, cancel := context.WithTimeout(conn.Ctx, commandTimeout)
+	defer cancel()
+	if err := conn.writeFrame(ctx, msgDataBuf); err != nil {
 		slog.Warn("Failed to write response", sloki.WrapError(err))
+		return true
 	}
+	return false
 }
 
-// SendCmd sends a command to a client and waits for the response.
+// SendCmd sends a command over the connection established by ConnectTo.
 func (s *Server) SendCmd(cmd *protocol.Command) (*protocol.Response, error) {
-	if s.clientConn == nil {
+	return s.SendCmdContext(context.Background(), cmd)
+}
+
+// SendCmdContext is SendCmd with cancellation or an earlier deadline.
+func (s *Server) SendCmdContext(ctx context.Context, cmd *protocol.Command) (*protocol.Response, error) {
+	s.connectionsMu.RLock()
+	conn := s.clientConn
+	s.connectionsMu.RUnlock()
+	if conn == nil {
 		return nil, ErrClientNotConnected
 	}
+	return s.sendCmd(ctx, conn, cmd)
+}
 
-	starTime := time.Now()
+// SendCmdTo sends a command to an accepted or outbound connection by its ID.
+// Both peers can send commands over the same connection at the same time.
+func (s *Server) SendCmdTo(connectionID string, cmd *protocol.Command) (*protocol.Response, error) {
+	return s.SendCmdToContext(context.Background(), connectionID, cmd)
+}
+
+// SendCmdToContext is SendCmdTo with cancellation or an earlier deadline.
+func (s *Server) SendCmdToContext(ctx context.Context, connectionID string, cmd *protocol.Command) (*protocol.Response, error) {
+	s.connectionsMu.RLock()
+	conn := s.connections[connectionID]
+	s.connectionsMu.RUnlock()
+	if conn == nil {
+		return nil, ErrConnectionNotFound
+	}
+	return s.sendCmd(ctx, conn, cmd)
+}
+
+func (s *Server) sendCmd(ctx context.Context, conn *connection, cmd *protocol.Command) (*protocol.Response, error) {
+	requestCtx, cancel := context.WithTimeout(ctx, commandTimeout)
+	defer cancel()
+	if err := requestCtx.Err(); err != nil {
+		return nil, err
+	}
+	if conn.Ctx.Err() != nil {
+		return nil, ErrConnectionClosed
+	}
+
+	startTime := time.Now()
 
 	respChan := make(chan *protocol.Response, 1)
-	s.pendingCmdsMu.Lock()
-	cmd.ReqID = s.requestIDCounter.Add(1)
-	s.pendingCmds[cmd.ReqID] = respChan
-	s.pendingCmdsMu.Unlock()
+	conn.pendingCmdsMu.Lock()
+	cmd.ReqID = conn.requestIDCounter.Add(1)
+	for conn.pendingCmds[cmd.ReqID] != nil {
+		cmd.ReqID = conn.requestIDCounter.Add(1)
+	}
+	reqID := cmd.ReqID
+	conn.pendingCmds[reqID] = respChan
+	conn.pendingCmdsMu.Unlock()
+	defer func() {
+		conn.pendingCmdsMu.Lock()
+		delete(conn.pendingCmds, reqID)
+		conn.pendingCmdsMu.Unlock()
+	}()
 
 	cmdMsg := protocol.Message{
 		ProtocolVersion: byte(protocol.Version1),
@@ -290,12 +346,13 @@ func (s *Server) SendCmd(cmd *protocol.Command) (*protocol.Response, error) {
 	}
 
 	cmdData := protocol.V1.EncodeMessage(&cmdMsg)
-	if err := protocol.V1.WriteFrame(s.clientConn, cmdData); err != nil {
-		return nil, err
+	if err := conn.writeFrame(requestCtx, cmdData); err != nil {
+		return nil, commandError(ctx, err)
 	}
 
 	slog.Debug(
-		"Sent command to server",
+		"Sent command to peer",
+		slog.String("conn_id", conn.ID),
 		slog.String("id", strconv.Itoa(int(cmd.ID))),
 		slog.String("payload_size", strconv.Itoa(len(cmd.Payload))),
 	)
@@ -303,22 +360,28 @@ func (s *Server) SendCmd(cmd *protocol.Command) (*protocol.Response, error) {
 	// Wait for the response or a timeout
 	select {
 	case resp := <-respChan:
-		s.pendingCmdsMu.Lock()
-		delete(s.pendingCmds, cmd.ReqID)
-		s.pendingCmdsMu.Unlock()
-
-		duration := time.Since(starTime)
+		duration := time.Since(startTime)
 		slog.Debug(
-			"Received response from server",
+			"Received response from peer",
+			slog.String("conn_id", conn.ID),
 			slog.String("status_code", strconv.Itoa(int(resp.Code))),
 			slog.String("payload_size", strconv.Itoa(len(resp.Payload))),
 			slog.Duration("duration", duration),
 		)
 		return resp, nil
-	case <-time.After(30 * time.Second):
-		s.pendingCmdsMu.Lock()
-		delete(s.pendingCmds, cmd.ReqID)
-		s.pendingCmdsMu.Unlock()
-		return nil, ErrCommandTimeout
+	case <-requestCtx.Done():
+		return nil, commandError(ctx, requestCtx.Err())
+	case <-conn.Ctx.Done():
+		return nil, ErrConnectionClosed
 	}
+}
+
+func commandError(ctx context.Context, err error) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return ErrCommandTimeout
+	}
+	return err
 }
