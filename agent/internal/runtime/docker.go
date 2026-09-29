@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/netip"
 	"strconv"
-	"strings"
 
 	"github.com/containerd/errdefs"
 	"github.com/docker/go-sdk/client"
@@ -123,10 +122,11 @@ func (r *DockerRuntime) createContainer(ctx context.Context, cfg TaskConfig) (st
 		Name: cfg.Name,
 		Config: &container.Config{
 			Image: cfg.Image,
+			Cmd:   cfg.Command,
 			Labels: map[string]string{
 				scoServerLabel: string(cfgData),
 			},
-			Env: convertEnvVariables(cfg.EnvironmentVariables),
+			Env: cfg.EnvironmentVariables,
 		},
 		HostConfig: &container.HostConfig{
 			PortBindings: portBindings,
@@ -233,16 +233,10 @@ func (r *DockerRuntime) GetTaskInfo(ctx context.Context, taskID string) (*TaskCo
 	}
 
 	image := result.Container.Config.Image
+	command := result.Container.Config.Cmd
+	env := result.Container.Config.Env
 	memory := result.Container.HostConfig.Memory / (1024 * 1024)
 	cpu := float32(result.Container.HostConfig.NanoCPUs) / 1e9
-
-	env := make(map[string]string)
-	for _, e := range result.Container.Config.Env {
-		parts := strings.Split(e, "=")
-		if len(parts) == 2 {
-			env[parts[0]] = parts[1]
-		}
-	}
 
 	exposedPorts := make(map[string]string)
 	for port, bindings := range result.Container.HostConfig.PortBindings {
@@ -254,6 +248,7 @@ func (r *DockerRuntime) GetTaskInfo(ctx context.Context, taskID string) (*TaskCo
 	return &TaskConfig{
 		Name:                 taskID,
 		Image:                image,
+		Command:              command,
 		EnvironmentVariables: env,
 		ExposedPorts:         exposedPorts,
 		Volumes:              result.Container.HostConfig.Binds,
@@ -295,14 +290,6 @@ func (r *DockerRuntime) IsTaskImageCurrent(ctx context.Context, taskID, image st
 //	fmt.Printf("STATS: %#v\n", resp)
 //	return nil
 //}
-
-func convertEnvVariables(env map[string]string) []string {
-	var result []string
-	for k, v := range env {
-		result = append(result, fmt.Sprintf("%s=%s", k, v))
-	}
-	return result
-}
 
 func convertPortBindings(ports map[string]string) (map[network.Port][]network.PortBinding, error) {
 	portBindings := map[network.Port][]network.PortBinding{}

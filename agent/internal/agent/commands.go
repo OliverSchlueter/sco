@@ -81,6 +81,7 @@ func (a *Agent) GetTasks() ([]runtime.TaskConfig, error) {
 		tasks = append(tasks, runtime.TaskConfig{
 			Name:                 nt.ContainerName,
 			Image:                nt.Image,
+			Command:              nt.Command,
 			EnvironmentVariables: nt.EnvironmentVariables,
 			ExposedPorts:         nt.ExposedPorts,
 			Volumes:              nt.Volumes,

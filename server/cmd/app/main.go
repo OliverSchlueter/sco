@@ -34,8 +34,8 @@ func main() {
 			{
 				ContainerName: "sco-nginx",
 				Image:         "nginx:latest",
-				EnvironmentVariables: map[string]string{
-					"ENV_VAR_1": "value1",
+				EnvironmentVariables: []string{
+					"ENV_VAR_1=value1",
 				},
 				ExposedPorts: map[string]string{"80": "8071"},
 				Volumes:      []string{},
@@ -45,8 +45,8 @@ func main() {
 			{
 				ContainerName: "sco-gitea",
 				Image:         "docker.gitea.com/gitea:latest",
-				EnvironmentVariables: map[string]string{
-					"ENV_VAR_1": "value2",
+				EnvironmentVariables: []string{
+					"ENV_VAR_1=value2",
 				},
 				ExposedPorts: map[string]string{
 					"3000": "3000",

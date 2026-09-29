@@ -45,8 +45,12 @@ type TaskConfig struct {
 	// Image is the container image.
 	Image string
 
-	// EnvironmentVariables is a map of environment variables to set in the container.
-	EnvironmentVariables map[string]string
+	// Command overrides the image's default CMD, preserving its ENTRYPOINT.
+	// A nil or empty command uses the image default.
+	Command []string
+
+	// EnvironmentVariables contains KEY=VALUE entries to set in the container.
+	EnvironmentVariables []string
 
 	// ExposedPorts is a map of container port to host port.
 	ExposedPorts map[string]string
@@ -77,6 +81,9 @@ func (t *TaskConfig) CompareTo(other *TaskConfig) bool {
 	if t.Image != other.Image {
 		return false
 	}
+	if !slices.Equal(t.Command, other.Command) {
+		return false
+	}
 	if t.MaxCPU != other.MaxCPU {
 		return false
 	}
@@ -84,8 +91,9 @@ func (t *TaskConfig) CompareTo(other *TaskConfig) bool {
 		return false
 	}
 
-	for k, v := range t.EnvironmentVariables {
-		if other.EnvironmentVariables[k] != v {
+	for _, e := range t.EnvironmentVariables {
+		// check if other has the same environment variable
+		if !slices.Contains(other.EnvironmentVariables, e) {
 			return false
 		}
 	}
