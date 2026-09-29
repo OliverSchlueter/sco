@@ -1,16 +1,20 @@
 package main
 
 import (
+	"encoding/json"
 	"log/slog"
 
 	"github.com/OliverSchlueter/goutils/sloki"
 	"github.com/OliverSchlueter/sco-protocol/pkg/protocol"
 	"github.com/OliverSchlueter/sco-protocol/pkg/protocolcommandstore"
 	"github.com/OliverSchlueter/sco-protocol/pkg/protocolserver"
+	"github.com/OliverSchlueter/sco-protocol/pkg/sharedmodels"
 )
 
 var accessToken string
 var authenticatedKey = "authenticated"
+
+var tasks map[string][]sharedmodels.NodeTask
 
 func main() {
 	// Setup logging
@@ -24,9 +28,35 @@ func main() {
 	})
 	slog.SetDefault(slog.New(logService))
 
-	accessToken = "token" // TODO: use MustGetString
+	// load tasks
+	tasks = map[string][]sharedmodels.NodeTask{
+		"agent01": {
+			{
+				ContainerName: "nginx01",
+				Image:         "nginx:latest",
+				ExposedPorts:  map[string]string{"80": "8070"},
+				MaxCPU:        0.5,
+				MaxMemory:     200,
+			},
+			{
+				ContainerName: "nginx02",
+				Image:         "nginx:latest",
+				ExposedPorts:  map[string]string{"80": "8071"},
+				MaxCPU:        0.5,
+				MaxMemory:     200,
+			},
+			{
+				ContainerName: "nginx03",
+				Image:         "nginx:latest",
+				ExposedPorts:  map[string]string{"80": "8072"},
+				MaxCPU:        0.5,
+				MaxMemory:     200,
+			},
+		},
+	}
 
-	slog.Info("Starting SCO server")
+	// server
+	accessToken = "token" // TODO: use MustGetString
 	startScoServer()
 	slog.Info("SCO server started")
 
@@ -46,6 +76,10 @@ func startScoServer() {
 		panic(err)
 	}
 	if err := cs.RegisterHandler(protocol.ServerCommandCheckAuth, handleCheckAuth); err != nil {
+		slog.Error("Failed to register handler", sloki.WrapError(err))
+		panic(err)
+	}
+	if err := cs.RegisterHandler(protocol.ServerCommandGetTasks, handleGetTasks); err != nil {
 		slog.Error("Failed to register handler", sloki.WrapError(err))
 		panic(err)
 	}
@@ -92,4 +126,45 @@ func handleCheckAuth(ctx *protocolcommandstore.ConnCtx, msg *protocol.Message, c
 		Code:    protocol.StatusCodeOK,
 		Payload: []byte("authenticated"),
 	}, nil
+}
+
+func handleGetTasks(ctx *protocolcommandstore.ConnCtx, msg *protocol.Message, cmd *protocol.Command) (*protocol.Response, error) {
+	if !checkAuthenticated(ctx) {
+		return &protocol.Response{
+			Code:    protocol.StatusNotAuthenticated,
+			Payload: []byte("not authenticated"),
+		}, nil
+	}
+
+	nodeName := string(cmd.Payload)
+	nodeTasks, ok := tasks[nodeName]
+	if !ok {
+		return &protocol.Response{
+			Code:    protocol.StatusNodeNotFound,
+			Payload: []byte("node not found"),
+		}, nil
+	}
+
+	// Serialize tasks to JSON
+	tasksJSON, err := json.Marshal(nodeTasks)
+	if err != nil {
+		return &protocol.Response{
+			Code:    protocol.StatusInternalError,
+			Payload: []byte("failed to serialize tasks"),
+		}, nil
+	}
+
+	return &protocol.Response{
+		Code:    protocol.StatusCodeOK,
+		Payload: tasksJSON,
+	}, nil
+
+}
+
+func checkAuthenticated(ctx *protocolcommandstore.ConnCtx) bool {
+	authenticated, ok := ctx.GetCustomData(authenticatedKey)
+	if !ok || !authenticated.(bool) {
+		return false
+	}
+	return true
 }

@@ -2,15 +2,19 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/netip"
+	"strconv"
 
 	"github.com/docker/go-sdk/client"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
 	mclient "github.com/moby/moby/client"
 )
+
+const scoServerLabel = "de.oliver.sco.task"
 
 type DockerRuntime struct {
 	client client.SDKClient
@@ -110,6 +114,11 @@ func (r *DockerRuntime) StartTask(ctx context.Context, cfg TaskConfig) error {
 }
 
 func (r *DockerRuntime) createContainer(ctx context.Context, cfg TaskConfig) (string, error) {
+	cfgData, err := json.Marshal(cfg)
+	if err != nil {
+		return "", err
+	}
+
 	portBindings, err := convertPortBindings(cfg.ExposedPorts)
 	if err != nil {
 		return "", err
@@ -120,7 +129,7 @@ func (r *DockerRuntime) createContainer(ctx context.Context, cfg TaskConfig) (st
 		Config: &container.Config{
 			Image: cfg.Image,
 			Labels: map[string]string{
-				"de.oliver.sco.task": "true",
+				scoServerLabel: string(cfgData),
 			},
 		},
 		HostConfig: &container.HostConfig{
@@ -157,14 +166,27 @@ func (r *DockerRuntime) StopTask(ctx context.Context, taskID string) error {
 	return nil
 }
 
+func (r *DockerRuntime) RemoveTask(ctx context.Context, taskID string) error {
+	_, err := r.client.ContainerRemove(ctx, taskID, mclient.ContainerRemoveOptions{})
+	if err != nil {
+		return err
+	}
+
+	slog.Debug("Removed container", slog.String("name", taskID))
+	return nil
+}
+
 func (r *DockerRuntime) GetTaskStatus(ctx context.Context, taskID string) (Status, error) {
 	summary, err := r.client.FindContainerByName(ctx, taskID)
 	if err != nil {
+		if err.Error() == fmt.Sprintf("container %s not found", taskID) {
+			return Unknown, nil
+		}
 		return Unknown, err
 	}
 
 	// check if the container is a sco task
-	if _, exists := summary.Labels["de.oliver.sco.task"]; !exists {
+	if _, exists := summary.Labels[scoServerLabel]; !exists {
 		return Unknown, nil
 	}
 
@@ -180,7 +202,7 @@ func (r *DockerRuntime) GetTaskStatus(ctx context.Context, taskID string) (Statu
 
 func (r *DockerRuntime) ListTasks(ctx context.Context) (map[string]Status, error) {
 	list, err := r.client.ContainerList(ctx, mclient.ContainerListOptions{
-		Filters: make(mclient.Filters).Add("label", "de.oliver.sco.task=true"),
+		Filters: make(mclient.Filters).Add("label", scoServerLabel),
 	})
 	if err != nil {
 		return nil, err
@@ -223,6 +245,32 @@ func (r *DockerRuntime) ListTasks(ctx context.Context) (map[string]Status, error
 //	fmt.Printf("STATS: %#v\n", resp)
 //	return nil
 //}
+
+func (r *DockerRuntime) GetTaskInfo(ctx context.Context, taskID string) (*TaskConfig, error) {
+	result, err := r.client.ContainerInspect(ctx, taskID, mclient.ContainerInspectOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	image := result.Container.Config.Image
+	memory := result.Container.HostConfig.Memory / (1024 * 1024)
+	cpu := float32(result.Container.HostConfig.NanoCPUs) / 1e9
+
+	exposedPorts := make(map[string]string)
+	for port, bindings := range result.Container.HostConfig.PortBindings {
+		if len(bindings) > 0 {
+			exposedPorts[strconv.Itoa(int(port.Num()))] = bindings[0].HostPort
+		}
+	}
+
+	return &TaskConfig{
+		Name:         taskID,
+		Image:        image,
+		ExposedPorts: exposedPorts,
+		MaxCPU:       cpu,
+		MaxMemory:    memory,
+	}, nil
+}
 
 func convertPortBindings(ports map[string]string) (map[network.Port][]network.PortBinding, error) {
 	portBindings := map[network.Port][]network.PortBinding{}

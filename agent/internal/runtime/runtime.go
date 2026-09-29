@@ -9,8 +9,10 @@ type Runtime interface {
 
 	StartTask(ctx context.Context, cfg TaskConfig) error
 	StopTask(ctx context.Context, taskID string) error
+	RemoveTask(ctx context.Context, taskID string) error
 
 	GetTaskStatus(ctx context.Context, taskID string) (Status, error)
+	GetTaskInfo(ctx context.Context, taskID string) (*TaskConfig, error)
 	ListTasks(ctx context.Context) (map[string]Status, error)
 }
 
@@ -39,5 +41,28 @@ const (
 	Unknown Status = "UNKNOWN"
 )
 
-type TaskStats struct {
+// CompareTo compares two TaskConfig objects and returns true if they are equal, false otherwise.
+func (t *TaskConfig) CompareTo(other *TaskConfig) bool {
+	if t.Name != other.Name {
+		return false
+	}
+	if t.Image != other.Image {
+		return false
+	}
+	if t.MaxCPU != other.MaxCPU {
+		return false
+	}
+	if t.MaxMemory != other.MaxMemory {
+		return false
+	}
+
+	if len(t.ExposedPorts) != len(other.ExposedPorts) {
+		return false
+	}
+	for k, v := range t.ExposedPorts {
+		if other.ExposedPorts[k] != v {
+			return false
+		}
+	}
+	return true
 }

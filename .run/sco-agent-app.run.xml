@@ -1,0 +1,10 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="sco-agent-app" type="GoApplicationRunConfiguration" factoryName="Go Application">
+    <module name="sco" />
+    <working_directory value="$PROJECT_DIR$/server" />
+    <kind value="PACKAGE" />
+    <package value="github.com/OliverSchlueter/sco-agent/cmd/app" />
+    <directory value="$PROJECT_DIR$" />
+    <method v="2" />
+  </configuration>
+</component>

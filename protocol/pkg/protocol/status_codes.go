@@ -11,6 +11,7 @@ const (
 	StatusInvalidMessage     uint16 = 400
 	StatusInvalidAccessToken uint16 = 401
 	StatusNotAuthenticated   uint16 = 402
+	StatusNodeNotFound       uint16 = 403
 
 	StatusInternalError   uint16 = 500
 	StatusCommandNotFound uint16 = 501

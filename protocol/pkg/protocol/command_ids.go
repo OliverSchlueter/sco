@@ -4,4 +4,5 @@ const (
 	ServerCommandPing      uint16 = 1
 	ServerCommandTokenAuth uint16 = 2
 	ServerCommandCheckAuth uint16 = 3
+	ServerCommandGetTasks  uint16 = 4
 )
