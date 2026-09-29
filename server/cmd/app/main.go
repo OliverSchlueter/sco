@@ -3,6 +3,7 @@ package main
 import (
 	_ "embed"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 
 	"github.com/OliverSchlueter/goutils/sloki"
@@ -12,34 +13,30 @@ import (
 	"github.com/OliverSchlueter/sco-protocol/pkg/sharedmodels"
 )
 
-var accessToken string
+var cfg Config
 var authenticatedKey = "authenticated"
 
-//go:embed tasks.json
-var taskData []byte
-var tasks []sharedmodels.NodeTask
-
 func main() {
+	// Load configuration
+	loadedCfg, err := LoadConfig("config.json")
+	if err != nil {
+		fmt.Printf("Failed to load config: %v\n", err)
+		panic(err)
+	}
+	cfg = *loadedCfg
+
 	// Setup logging
 	logService := sloki.NewService(sloki.Configuration{
 		URL:          "http://localhost:3100/loki/api/v1/push",
 		Service:      "sco",
-		ConsoleLevel: slog.LevelDebug,
+		ConsoleLevel: cfg.SlogLevel(),
 		LokiLevel:    slog.LevelInfo,
 		EnableLoki:   false,
 		Handlers:     []sloki.LogHandler{},
 	})
 	slog.SetDefault(slog.New(logService))
 
-	// load tasks
-	if err := json.Unmarshal(taskData, &tasks); err != nil {
-		slog.Error("Failed to load tasks", sloki.WrapError(err))
-		panic(err)
-	}
-	slog.Info("Loaded tasks", "count", len(tasks))
-
 	// server
-	accessToken = "token" // TODO: use MustGetString
 	startScoServer()
 	slog.Info("SCO server started")
 
@@ -81,7 +78,7 @@ func handlePing(ctx *protocolcommandstore.ConnCtx, msg *protocol.Message, cmd *p
 
 func handleTokenAuth(ctx *protocolcommandstore.ConnCtx, msg *protocol.Message, cmd *protocol.Command) (*protocol.Response, error) {
 	providedToken := string(cmd.Payload)
-	if providedToken != accessToken {
+	if providedToken != cfg.AccessToken {
 		return &protocol.Response{
 			Code:    protocol.StatusInvalidAccessToken,
 			Payload: []byte("invalid access token"),
@@ -122,7 +119,7 @@ func handleGetTasks(ctx *protocolcommandstore.ConnCtx, msg *protocol.Message, cm
 	nodeName := string(cmd.Payload)
 
 	nodeTasks := []sharedmodels.NodeTask{}
-	for _, t := range tasks {
+	for _, t := range cfg.Tasks {
 		if t.Node == nodeName {
 			nodeTasks = append(nodeTasks, t)
 		}
