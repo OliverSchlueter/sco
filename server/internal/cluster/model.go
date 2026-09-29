@@ -11,14 +11,17 @@ type Cluster struct {
 }
 
 type Service struct {
-	Type                ServiceType         `json:"type"`
-	Name                string              `json:"name"`
-	Image               string              `json:"image"`
-	Ports               map[string]string   `json:"ports"`
-	MaxCPU              float32             `json:"max_cpu"`
-	MaxMemory           int                 `json:"max_memory"`
-	Replicas            int                 `json:"replicas"`
-	LoadBalanceStrategy LoadBalanceStrategy `json:"load_balance_strategy"`
+	Type                 ServiceType         `json:"type"`
+	Name                 string              `json:"name"`
+	Image                string              `json:"image"`
+	Command              []string            `json:"command"`
+	EnvironmentVariables []string            `json:"environment_variables"`
+	Ports                map[string]string   `json:"ports"`
+	Volumes              []string            `json:"volumes"`
+	MaxCPU               float32             `json:"max_cpu"`
+	MaxMemory            int                 `json:"max_memory"`
+	Replicas             int                 `json:"replicas"`
+	LoadBalanceStrategy  LoadBalanceStrategy `json:"load_balance_strategy"`
 
 	Endpoints         map[string][]*Endpoint
 	roundRobinCounter int

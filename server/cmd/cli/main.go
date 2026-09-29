@@ -75,14 +75,17 @@ func testGateway() {
 			//	},
 			//},
 			{
-				Type:                cluster.ServiceTypeTCP,
-				Name:                "http-service",
-				Image:               "nginx:latest",
-				Ports:               map[string]string{"80": "8080"},
-				MaxCPU:              1,
-				MaxMemory:           200,
-				Replicas:            5,
-				LoadBalanceStrategy: cluster.LoadBalanceStrategyRoundRobin,
+				Type:                 cluster.ServiceTypeTCP,
+				Name:                 "http-service",
+				Image:                "nginx:latest",
+				Command:              []string{"nginx", "-g", "daemon off;"},
+				EnvironmentVariables: []string{"ENV_VAR_1=value1"},
+				Ports:                map[string]string{"80": "8080"},
+				Volumes:              []string{"/path/to/host:/path/to/container"},
+				MaxCPU:               1,
+				MaxMemory:            200,
+				Replicas:             5,
+				LoadBalanceStrategy:  cluster.LoadBalanceStrategyRoundRobin,
 				Endpoints: map[string][]*cluster.Endpoint{
 					"80": {
 						{
