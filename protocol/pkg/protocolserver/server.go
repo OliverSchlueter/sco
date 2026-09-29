@@ -380,7 +380,12 @@ func commandError(ctx context.Context, err error) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	if errors.Is(err, context.DeadlineExceeded) {
+	var networkErr net.Error
+	isNetworkTimeout := errors.As(err, &networkErr) && networkErr.Timeout()
+	if errors.Is(err, context.DeadlineExceeded) || isNetworkTimeout {
+		if deadline, ok := ctx.Deadline(); ok && !time.Now().Before(deadline) {
+			return context.DeadlineExceeded
+		}
 		return ErrCommandTimeout
 	}
 	return err
