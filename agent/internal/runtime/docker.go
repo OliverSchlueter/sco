@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/containerd/errdefs"
 	"github.com/docker/go-sdk/client"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
@@ -33,13 +34,6 @@ func NewDockerRuntime() (*DockerRuntime, error) {
 }
 
 func (r *DockerRuntime) PullImage(ctx context.Context, image string) error {
-	// TODO check if image exists and is up to date
-	//_, err := r.client.ImageInspect(ctx, image)
-	//if err == nil {
-	//	slog.Debug("Image already exists", slog.String("image", image))
-	//	return nil
-	//}
-
 	slog.Debug("Pulling image", slog.String("image", image))
 	resp, err := r.client.ImagePull(ctx, image, mclient.ImagePullOptions{})
 	if err != nil {
@@ -231,6 +225,9 @@ func (r *DockerRuntime) ListTasks(ctx context.Context) (map[string]Status, error
 func (r *DockerRuntime) GetTaskInfo(ctx context.Context, taskID string) (*TaskConfig, error) {
 	result, err := r.client.ContainerInspect(ctx, taskID, mclient.ContainerInspectOptions{})
 	if err != nil {
+		if errdefs.IsNotFound(err) {
+			return nil, nil
+		}
 		return nil, err
 	}
 
@@ -261,6 +258,20 @@ func (r *DockerRuntime) GetTaskInfo(ctx context.Context, taskID string) (*TaskCo
 		MaxCPU:               cpu,
 		MaxMemory:            memory,
 	}, nil
+}
+
+func (r *DockerRuntime) IsTaskImageCurrent(ctx context.Context, taskID, image string) (bool, error) {
+	current, err := r.client.ContainerInspect(ctx, taskID, mclient.ContainerInspectOptions{})
+	if err != nil {
+		return false, err
+	}
+
+	desired, err := r.client.ImageInspect(ctx, image)
+	if err != nil {
+		return false, err
+	}
+
+	return current.Container.Image == desired.ID, nil
 }
 
 //func (r *DockerRuntime) GetStats(ctx context.Context, taskID string) error {

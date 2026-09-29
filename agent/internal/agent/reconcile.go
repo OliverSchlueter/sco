@@ -64,48 +64,49 @@ func (a *Agent) reconcileTask(ctx context.Context, t runtime.TaskConfig) error {
 		return err
 	}
 
-	// start the task if it's not running
-	if status != runtime.StatusRunning {
-		if err := a.rt.PullImage(ctx, t.Image); err != nil {
-			return err
-		}
-
-		if err := a.rt.StartTask(ctx, t); err != nil {
-			return err
-		}
-
-		slog.Info("Task started successfully", "task", t.Name)
-		return nil
+	// Pull before stopping any existing task so a failed pull leaves it running.
+	if err := a.rt.PullImage(ctx, t.Image); err != nil {
+		return err
 	}
 
-	// check if the task is running with the correct configuration
 	current, err := a.rt.GetTaskInfo(ctx, t.Name)
 	if err != nil {
 		return err
 	}
-	if !t.CompareTo(current) {
-		slog.Info("Task configuration has changed, restarting task", "task", t.Name)
 
-		if err := a.rt.StopTask(ctx, t.Name); err != nil {
+	restart := false
+	if current != nil {
+		imageCurrent, err := a.rt.IsTaskImageCurrent(ctx, t.Name, t.Image)
+		if err != nil {
 			return err
 		}
-		if err := a.rt.RemoveTask(ctx, t.Name); err != nil {
-			return err
-		}
+		restart = !t.CompareTo(current) || !imageCurrent
+		if restart {
+			slog.Info("Task configuration or image has changed, restarting task", "task", t.Name, "image_changed", !imageCurrent)
 
-		if err := a.rt.PullImage(ctx, t.Image); err != nil {
-			return err
+			if status != runtime.StatusStopped {
+				if err := a.rt.StopTask(ctx, t.Name); err != nil {
+					return err
+				}
+			}
+			if err := a.rt.RemoveTask(ctx, t.Name); err != nil {
+				return err
+			}
+		} else if status == runtime.StatusRunning {
+			slog.Info("Task is already running", "task", t.Name)
+			return nil
 		}
-
-		if err := a.rt.StartTask(ctx, t); err != nil {
-			return err
-		}
-
-		slog.Info("Task restarted successfully", "task", t.Name)
-		return nil
 	}
 
-	slog.Info("Task is already running", "task", t.Name)
+	if err := a.rt.StartTask(ctx, t); err != nil {
+		return err
+	}
+
+	if restart {
+		slog.Info("Task restarted successfully", "task", t.Name)
+	} else {
+		slog.Info("Task started successfully", "task", t.Name)
+	}
 
 	return nil
 }

@@ -59,10 +59,10 @@ func NewAgent(cfg Configuration) (*Agent, error) {
 	a.initPingLoop()
 
 	// reconcile tasks
-	a.initReconcileLoop()
 	if err := a.reconcile(); err != nil {
 		return nil, fmt.Errorf("error during initial reconcile: %w", err)
 	}
+	a.initReconcileLoop()
 
 	return a, nil
 }
