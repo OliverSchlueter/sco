@@ -32,7 +32,7 @@ func main() {
 	tasks = map[string][]sharedmodels.NodeTask{
 		"agent01": {
 			{
-				ContainerName: "nginx01",
+				ContainerName: "sco-nginx",
 				Image:         "nginx:latest",
 				EnvironmentVariables: map[string]string{
 					"ENV_VAR_1": "value1",
@@ -42,24 +42,17 @@ func main() {
 				MaxMemory:    200,
 			},
 			{
-				ContainerName: "nginx02",
-				Image:         "nginx:latest",
+				ContainerName: "sco-gitea",
+				Image:         "docker.gitea.com/gitea:latest",
 				EnvironmentVariables: map[string]string{
-					"ENV_VAR_1": "value2",
+					"ENV_VAR_1": "valueSomething",
 				},
-				ExposedPorts: map[string]string{"80": "8072"},
-				MaxCPU:       0.5,
-				MaxMemory:    200,
-			},
-			{
-				ContainerName: "nginx03",
-				Image:         "nginx:latest",
-				EnvironmentVariables: map[string]string{
-					"ENV_VAR_1": "value3",
+				ExposedPorts: map[string]string{
+					"3000": "3000",
+					"22":   "2222",
 				},
-				ExposedPorts: map[string]string{"80": "8073"},
-				MaxCPU:       0.5,
-				MaxMemory:    200,
+				MaxCPU:    0.5,
+				MaxMemory: 200,
 			},
 		},
 	}

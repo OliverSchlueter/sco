@@ -19,18 +19,12 @@ func (a *Agent) reconcile() error {
 	ctx := context.Background()
 
 	slog.Info("Reconciling tasks", "task_count", len(a.tasks))
-	for _, t := range a.tasks {
-		if err := a.reconcileTask(ctx, t); err != nil {
-			slog.Error("Error reconciling task", "task", t.Name, sloki.WrapError(err))
-			continue
-		}
-	}
 
+	// stop tasks that are no longer in the task list
 	runningTasks, err := a.rt.ListTasks(ctx)
 	if err != nil {
 		return err
 	}
-
 	for rt := range runningTasks {
 		found := false
 		for _, t := range a.tasks {
@@ -50,6 +44,14 @@ func (a *Agent) reconcile() error {
 				continue
 			}
 			slog.Info("Task stopped and removed successfully", "task", rt)
+		}
+	}
+
+	// reconcile tasks that are in the task list
+	for _, t := range a.tasks {
+		if err := a.reconcileTask(ctx, t); err != nil {
+			slog.Error("Error reconciling task", "task", t.Name, sloki.WrapError(err))
+			continue
 		}
 	}
 
