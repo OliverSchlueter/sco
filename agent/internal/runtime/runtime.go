@@ -81,7 +81,7 @@ func (t *TaskConfig) CompareTo(other *TaskConfig) bool {
 	if t.Image != other.Image {
 		return false
 	}
-	if !slices.Equal(t.Command, other.Command) {
+	if len(t.Command) > 0 && !slices.Equal(t.Command, other.Command) {
 		return false
 	}
 	if t.MaxCPU != other.MaxCPU {

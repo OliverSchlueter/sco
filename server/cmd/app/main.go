@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "embed"
 	"encoding/json"
 	"log/slog"
 
@@ -14,7 +15,9 @@ import (
 var accessToken string
 var authenticatedKey = "authenticated"
 
-var tasks map[string][]sharedmodels.NodeTask
+//go:embed tasks.json
+var taskData []byte
+var tasks []sharedmodels.NodeTask
 
 func main() {
 	// Setup logging
@@ -29,37 +32,11 @@ func main() {
 	slog.SetDefault(slog.New(logService))
 
 	// load tasks
-	tasks = map[string][]sharedmodels.NodeTask{
-		"agent01": {
-			{
-				ContainerName: "sco-nginx",
-				Image:         "nginx:latest",
-				EnvironmentVariables: []string{
-					"ENV_VAR_1=value1",
-				},
-				ExposedPorts: map[string]string{"80": "8071"},
-				Volumes:      []string{},
-				MaxCPU:       0.5,
-				MaxMemory:    200,
-			},
-			{
-				ContainerName: "sco-gitea",
-				Image:         "docker.gitea.com/gitea:latest",
-				EnvironmentVariables: []string{
-					"ENV_VAR_1=value2",
-				},
-				ExposedPorts: map[string]string{
-					"3000": "3000",
-					"22":   "2222",
-				},
-				Volumes: []string{
-					//"/Users/oliver/Desktop/gitea_data:/data",
-				},
-				MaxCPU:    0.5,
-				MaxMemory: 200,
-			},
-		},
+	if err := json.Unmarshal(taskData, &tasks); err != nil {
+		slog.Error("Failed to load tasks", sloki.WrapError(err))
+		panic(err)
 	}
+	slog.Info("Loaded tasks", "count", len(tasks))
 
 	// server
 	accessToken = "token" // TODO: use MustGetString
@@ -143,12 +120,12 @@ func handleGetTasks(ctx *protocolcommandstore.ConnCtx, msg *protocol.Message, cm
 	}
 
 	nodeName := string(cmd.Payload)
-	nodeTasks, ok := tasks[nodeName]
-	if !ok {
-		return &protocol.Response{
-			Code:    protocol.StatusNodeNotFound,
-			Payload: []byte("node not found"),
-		}, nil
+
+	nodeTasks := []sharedmodels.NodeTask{}
+	for _, t := range tasks {
+		if t.Node == nodeName {
+			nodeTasks = append(nodeTasks, t)
+		}
 	}
 
 	// Serialize tasks to JSON

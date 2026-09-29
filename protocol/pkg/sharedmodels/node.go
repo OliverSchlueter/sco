@@ -1,6 +1,7 @@
 package sharedmodels
 
 type NodeTask struct {
+	Node                 string            `json:"node"`
 	ContainerName        string            `json:"container_name"`
 	Image                string            `json:"image"`
 	Command              []string          `json:"command"`

@@ -78,6 +78,10 @@ func (a *Agent) GetTasks() ([]runtime.TaskConfig, error) {
 	// convert NodeTask to TaskConfig
 	var tasks []runtime.TaskConfig
 	for _, nt := range nts {
+		if nt.Node != a.nodeName {
+			continue
+		}
+
 		tasks = append(tasks, runtime.TaskConfig{
 			Name:                 nt.ContainerName,
 			Image:                nt.Image,
