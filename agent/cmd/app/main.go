@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"math/rand"
 
 	"github.com/OliverSchlueter/goutils/sloki"
+	"github.com/OliverSchlueter/sco-agent/internal/runtime"
 	"github.com/OliverSchlueter/sco-protocol/pkg/protocol"
 	"github.com/OliverSchlueter/sco-protocol/pkg/protocolcommandstore"
 	"github.com/OliverSchlueter/sco-protocol/pkg/protocolserver"
@@ -114,4 +116,28 @@ func CheckAuth(srv *protocolserver.Server) (bool, error) {
 		return false, nil
 	}
 	return true, nil
+}
+
+func testDockerRuntime() {
+	rt, err := runtime.NewDockerRuntime()
+	if err != nil {
+		panic(err)
+	}
+
+	ctx := context.Background()
+
+	if err := rt.PullImage(ctx, "nginx:latest"); err != nil {
+		panic(err)
+	}
+
+	err = rt.StartTask(ctx, runtime.TaskConfig{
+		Name:         "nginx01",
+		Image:        "nginx:latest",
+		ExposedPorts: map[string]string{"80": "8080"},
+		MaxCPU:       0.5,
+		MaxMemory:    200,
+	})
+	if err != nil {
+		panic(err)
+	}
 }

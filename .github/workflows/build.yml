@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  sco-server:
-    name: sco-server
+  build-sco:
+    name: build-sco
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
