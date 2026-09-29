@@ -11,14 +11,15 @@ import (
 	"github.com/OliverSchlueter/sco-protocol/pkg/protocolcommandstore"
 	"github.com/OliverSchlueter/sco-protocol/pkg/protocolserver"
 	"github.com/OliverSchlueter/sco-protocol/pkg/sharedmodels"
+	"github.com/OliverSchlueter/sco-server/internal/config"
 )
 
-var cfg Config
+var cfg config.Config
 var authenticatedKey = "authenticated"
 
 func main() {
 	// Load configuration
-	loadedCfg, err := LoadConfig("config.json")
+	loadedCfg, err := config.LoadConfig("config.json")
 	if err != nil {
 		fmt.Printf("Failed to load config: %v\n", err)
 		panic(err)

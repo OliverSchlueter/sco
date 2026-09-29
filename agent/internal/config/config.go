@@ -1,19 +1,17 @@
-package main
+package config
 
 import (
 	"encoding/json"
 	"log/slog"
 	"os"
 	"strings"
-
-	"github.com/OliverSchlueter/goutils/idgen"
-	"github.com/OliverSchlueter/sco-protocol/pkg/sharedmodels"
 )
 
 type Config struct {
-	LogLevel    string                  `json:"log_level"`
-	AccessToken string                  `json:"access_token"`
-	Tasks       []sharedmodels.NodeTask `json:"tasks"`
+	LogLevel    string `json:"log_level"`
+	NodeName    string `json:"node_name"`
+	Endpoint    string `json:"endpoint"`
+	AccessToken string `json:"access_token"`
 }
 
 func (c *Config) SlogLevel() slog.Level {
@@ -56,23 +54,9 @@ func LoadConfig(path string) (*Config, error) {
 func generateDefaultConfig(path string) (*Config, error) {
 	defaultConfig := Config{
 		LogLevel:    "info",
-		AccessToken: idgen.GenerateID(64),
-		Tasks: []sharedmodels.NodeTask{
-			{
-				Node:                 "agent-1",
-				ContainerName:        "sco-gitea",
-				Image:                "docker.gitea.com/gitea:latest",
-				Command:              []string{},
-				EnvironmentVariables: []string{},
-				ExposedPorts: map[string]string{
-					"3000": "3000",
-					"22":   "2222",
-				},
-				Volumes:   []string{},
-				MaxCPU:    0.5,
-				MaxMemory: 512,
-			},
-		},
+		NodeName:    "agent-1",
+		Endpoint:    "localhost:8080",
+		AccessToken: "PASTE_YOUR_ACCESS_TOKEN_HERE",
 	}
 
 	data, err := json.MarshalIndent(defaultConfig, "", "  ")

@@ -6,13 +6,14 @@ import (
 
 	"github.com/OliverSchlueter/goutils/sloki"
 	"github.com/OliverSchlueter/sco-agent/internal/agent"
+	"github.com/OliverSchlueter/sco-agent/internal/config"
 )
 
-var cfg Config
+var cfg config.Config
 
 func main() {
 	// Load configuration
-	loadedCfg, err := LoadConfig("config.json")
+	loadedCfg, err := config.LoadConfig("config.json")
 	if err != nil {
 		fmt.Printf("Failed to load config: %v\n", err)
 		panic(err)
