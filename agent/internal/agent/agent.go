@@ -24,11 +24,19 @@ type Configuration struct {
 	NodeName    string
 	Endpoint    string
 	AccessToken string
+	Runtime     string
 }
 
 func NewAgent(cfg Configuration) (*Agent, error) {
 	// runtime
-	rt, err := runtime.NewDockerRuntime()
+	var rt runtime.Runtime
+	var err error
+	switch cfg.Runtime {
+	case "docker":
+		rt, err = runtime.NewDockerRuntime()
+	default:
+		return nil, fmt.Errorf("unsupported runtime: %s", cfg.Runtime)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("error initializing runtime: %w", err)
 	}

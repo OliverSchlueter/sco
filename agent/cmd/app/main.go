@@ -35,6 +35,7 @@ func main() {
 		Endpoint:    cfg.Endpoint,
 		AccessToken: cfg.AccessToken,
 		NodeName:    cfg.NodeName,
+		Runtime:     cfg.Runtime,
 	})
 	if err != nil {
 		slog.Error("Error creating agent", sloki.WrapError(err))

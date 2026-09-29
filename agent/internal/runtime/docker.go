@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"log/slog"
 	"net/netip"
+	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/containerd/errdefs"
 	"github.com/docker/go-sdk/client"
+	dockercontext "github.com/docker/go-sdk/context"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
 	mclient "github.com/moby/moby/client"
@@ -22,7 +25,11 @@ type DockerRuntime struct {
 }
 
 func NewDockerRuntime() (*DockerRuntime, error) {
-	cli, err := client.New(context.Background())
+	opts, err := dockerClientOptions()
+	if err != nil {
+		return nil, err
+	}
+	cli, err := client.New(context.Background(), opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -30,6 +37,34 @@ func NewDockerRuntime() (*DockerRuntime, error) {
 	return &DockerRuntime{
 		client: cli,
 	}, nil
+}
+
+func dockerClientOptions() ([]client.ClientOption, error) {
+	// Let the SDK resolve explicitly configured authentication and contexts.
+	if os.Getenv("DOCKER_AUTH_CONFIG") != "" || os.Getenv("DOCKER_CONTEXT") != "" {
+		return nil, nil
+	}
+	dir := os.Getenv("DOCKER_CONFIG")
+	if dir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, err
+		}
+		dir = filepath.Join(home, ".docker")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "config.json")); !os.IsNotExist(err) {
+		// Existing, invalid, or unreadable configuration must not be bypassed.
+		return nil, nil
+	}
+
+	// The SDK loses os.ErrNotExist when reporting a missing CLI config. Supply
+	// a host explicitly so fresh installations can use Docker without that file.
+	// Its host resolver still handles DOCKER_HOST and rootless sockets first.
+	host, err := dockercontext.CurrentDockerHost()
+	if err != nil {
+		host = mclient.DefaultDockerHost
+	}
+	return []client.ClientOption{client.WithDockerHost(host)}, nil
 }
 
 func (r *DockerRuntime) PullImage(ctx context.Context, image string) error {

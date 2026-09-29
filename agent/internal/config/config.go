@@ -10,6 +10,7 @@ import (
 type Config struct {
 	LogLevel    string `json:"log_level"`
 	NodeName    string `json:"node_name"`
+	Runtime     string `json:"runtime"`
 	Endpoint    string `json:"endpoint"`
 	AccessToken string `json:"access_token"`
 }
@@ -55,6 +56,7 @@ func generateDefaultConfig(path string) (*Config, error) {
 	defaultConfig := Config{
 		LogLevel:    "info",
 		NodeName:    "agent-1",
+		Runtime:     "docker",
 		Endpoint:    "localhost:8080",
 		AccessToken: "PASTE_YOUR_ACCESS_TOKEN_HERE",
 	}
