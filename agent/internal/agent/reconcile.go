@@ -110,8 +110,9 @@ func (a *Agent) reconcileTask(ctx context.Context, t runtime.TaskConfig) error {
 
 func (a *Agent) initReconcileLoop() {
 	go func() {
-		t := time.NewTicker(5 * time.Second)
-		for range t.C {
+		for {
+			time.Sleep(5 * time.Second)
+
 			if err := a.reconcile(); err != nil {
 				slog.Error("Error reconciling tasks", sloki.WrapError(err))
 			}
