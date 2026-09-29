@@ -2,6 +2,7 @@ package agent
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/OliverSchlueter/sco-agent/internal/runtime"
 	"github.com/OliverSchlueter/sco-protocol/pkg/protocol"
@@ -18,7 +19,7 @@ func (a *Agent) Ping() (bool, error) {
 	}
 
 	if resp.Code != protocol.StatusCodeOK {
-		return false, nil
+		return false, fmt.Errorf("unexpected response code: %d, payload: %s", resp.Code, string(resp.Payload))
 	}
 	return true, nil
 }
@@ -33,7 +34,7 @@ func (a *Agent) TokenAuth(token string) (bool, error) {
 	}
 
 	if resp.Code != protocol.StatusCodeOK {
-		return false, nil
+		return false, fmt.Errorf("unexpected response code: %d, payload: %s", resp.Code, string(resp.Payload))
 	}
 	return true, nil
 }
@@ -48,7 +49,10 @@ func (a *Agent) CheckAuth() (bool, error) {
 	}
 
 	if resp.Code != protocol.StatusCodeOK {
-		return false, nil
+		if resp.Code == protocol.StatusNotAuthenticated {
+			return false, nil
+		}
+		return false, fmt.Errorf("unexpected response code: %d, payload: %s", resp.Code, string(resp.Payload))
 	}
 	return true, nil
 }
@@ -63,7 +67,7 @@ func (a *Agent) GetTasks() ([]runtime.TaskConfig, error) {
 	}
 
 	if resp.Code != protocol.StatusCodeOK {
-		return nil, nil
+		return nil, fmt.Errorf("unexpected response code: %d, payload: %s", resp.Code, string(resp.Payload))
 	}
 
 	var nts []sharedmodels.NodeTask

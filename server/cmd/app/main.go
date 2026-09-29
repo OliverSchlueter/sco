@@ -37,7 +37,7 @@ func main() {
 				EnvironmentVariables: map[string]string{
 					"ENV_VAR_1": "value1",
 				},
-				ExposedPorts: map[string]string{"80": "8070"},
+				ExposedPorts: map[string]string{"80": "8071"},
 				MaxCPU:       0.5,
 				MaxMemory:    200,
 			},
@@ -47,7 +47,7 @@ func main() {
 				EnvironmentVariables: map[string]string{
 					"ENV_VAR_1": "value2",
 				},
-				ExposedPorts: map[string]string{"80": "8071"},
+				ExposedPorts: map[string]string{"80": "8072"},
 				MaxCPU:       0.5,
 				MaxMemory:    200,
 			},
@@ -57,7 +57,7 @@ func main() {
 				EnvironmentVariables: map[string]string{
 					"ENV_VAR_1": "value3",
 				},
-				ExposedPorts: map[string]string{"80": "8072"},
+				ExposedPorts: map[string]string{"80": "8073"},
 				MaxCPU:       0.5,
 				MaxMemory:    200,
 			},

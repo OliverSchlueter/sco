@@ -16,7 +16,12 @@ import (
 	"github.com/OliverSchlueter/sco-protocol/pkg/protocolcommandstore"
 )
 
-const commandTimeout = 30 * time.Second
+const (
+	commandTimeout    = 30 * time.Second
+	connectTimeout    = 10 * time.Second
+	reconnectDelay    = time.Second
+	maxReconnectDelay = 30 * time.Second
+)
 
 type Server struct {
 	port string
@@ -25,6 +30,7 @@ type Server struct {
 	connectionsMu sync.RWMutex
 	connections   map[string]*connection
 	clientConn    *connection
+	clientCancel  context.CancelFunc
 }
 
 func New(port string, commandStore *protocolcommandstore.Store) *Server {
@@ -79,25 +85,108 @@ func (s *Server) Start() {
 	}
 }
 
-// ConnectTo establishes a connection to a remote server.
+// ConnectTo establishes a connection to a remote server and reconnects if it is
+// lost. A failed initial connection returns an error without starting retries or
+// replacing an existing connection. A successful call stops any previous retries.
 func (s *Server) ConnectTo(addr string) error {
-	conn, err := net.Dial("tcp", addr)
+	conn, err := net.DialTimeout("tcp", addr, connectTimeout)
 	if err != nil {
 		return err
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
 	peer := newConnection(conn)
 	s.connectionsMu.Lock()
 	previous := s.clientConn
+	if s.clientCancel != nil {
+		s.clientCancel()
+	}
+	if previous != nil {
+		delete(s.connections, previous.ID)
+	}
 	s.clientConn = peer
+	s.clientCancel = cancel
 	s.connections[peer.ID] = peer
 	s.connectionsMu.Unlock()
 	if previous != nil {
 		previous.close()
 	}
 
-	go s.serveConnection(peer)
+	go s.serveClientConnection(ctx, addr, peer)
 	return nil
+}
+
+// Disconnect closes the outbound connection and stops automatic reconnection.
+// Accepted connections are unaffected, and ConnectTo may be called again.
+func (s *Server) Disconnect() {
+	s.connectionsMu.Lock()
+	if s.clientCancel != nil {
+		s.clientCancel()
+		s.clientCancel = nil
+	}
+	peer := s.clientConn
+	s.clientConn = nil
+	if peer != nil {
+		delete(s.connections, peer.ID)
+	}
+	s.connectionsMu.Unlock()
+	if peer != nil {
+		peer.close()
+	}
+}
+
+func (s *Server) serveClientConnection(ctx context.Context, addr string, peer *connection) {
+	for {
+		s.serveConnection(peer)
+		if ctx.Err() != nil {
+			return
+		}
+
+		slog.Info("Reconnecting to protocol server", slog.String("addr", addr))
+		peer = s.reconnect(ctx, addr)
+		if peer == nil {
+			return
+		}
+	}
+}
+
+// reconnect retries with capped exponential backoff. Cancellation interrupts
+// both the delay and dialing when Disconnect or a new ConnectTo replaces it.
+func (s *Server) reconnect(ctx context.Context, addr string) *connection {
+	dialer := net.Dialer{Timeout: connectTimeout}
+	for delay := reconnectDelay; ; delay = min(2*delay, maxReconnectDelay) {
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil
+		case <-timer.C:
+		}
+
+		conn, err := dialer.DialContext(ctx, "tcp", addr)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			slog.Warn("Failed to reconnect to protocol server", slog.String("addr", addr), sloki.WrapError(err))
+			continue
+		}
+
+		peer := newConnection(conn)
+		s.connectionsMu.Lock()
+		// A replaced retry loop must never overwrite the new outbound peer.
+		if ctx.Err() != nil {
+			s.connectionsMu.Unlock()
+			peer.close()
+			return nil
+		}
+		s.clientConn = peer
+		s.connections[peer.ID] = peer
+		s.connectionsMu.Unlock()
+
+		slog.Info("Reconnected to protocol server", slog.String("addr", addr), slog.String("conn_id", peer.ID))
+		return peer
+	}
 }
 
 // handleConnection manages the lifecycle of a single client connection.

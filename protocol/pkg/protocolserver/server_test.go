@@ -84,12 +84,19 @@ func await[T any](t *testing.T, ch <-chan T) T {
 
 func awaitConnection(t *testing.T, srv *Server) *protocolcommandstore.ConnCtx {
 	t.Helper()
+	return awaitReplacementConnection(t, srv, "")
+}
+
+func awaitReplacementConnection(t *testing.T, srv *Server, previousID string) *protocolcommandstore.ConnCtx {
+	t.Helper()
 	deadline := time.After(5 * time.Second)
 	tick := time.NewTicker(time.Millisecond)
 	defer tick.Stop()
 	for {
 		for _, conn := range srv.GetConnections() {
-			return conn
+			if conn.ID != previousID {
+				return conn
+			}
 		}
 		select {
 		case <-tick.C:
@@ -121,6 +128,7 @@ func assertNoPendingCommands(t *testing.T, conn *connection) {
 func TestConnectToBidirectional(t *testing.T) {
 	srv := New("", protocolcommandstore.New())
 	agent := New("", protocolcommandstore.New())
+	t.Cleanup(agent.Disconnect)
 	registerHandler(t, srv, echoCommand, echoHandler)
 	registerHandler(t, agent, echoCommand, echoHandler)
 

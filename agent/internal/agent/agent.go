@@ -5,14 +5,16 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/OliverSchlueter/goutils/sloki"
 	"github.com/OliverSchlueter/sco-agent/internal/runtime"
 	"github.com/OliverSchlueter/sco-protocol/pkg/protocolcommandstore"
 	"github.com/OliverSchlueter/sco-protocol/pkg/protocolserver"
 )
 
 type Agent struct {
-	nodeName string
-	server   *protocolserver.Server
+	nodeName    string
+	accessToken string
+	server      *protocolserver.Server
 
 	rt    runtime.Runtime
 	tasks []runtime.TaskConfig
@@ -40,24 +42,19 @@ func NewAgent(cfg Configuration) (*Agent, error) {
 	time.Sleep(100 * time.Millisecond) // Wait for connection to establish
 
 	a := &Agent{
-		nodeName: cfg.NodeName,
-		server:   agentServer,
-		rt:       rt,
-		tasks:    []runtime.TaskConfig{},
+		nodeName:    cfg.NodeName,
+		accessToken: cfg.AccessToken,
+		server:      agentServer,
+		rt:          rt,
+		tasks:       []runtime.TaskConfig{},
 	}
 
 	// ping and auth
 	if pingSuccess, err := a.Ping(); err != nil || !pingSuccess {
-		slog.Error("Error pinging server", "err", err)
 		return nil, fmt.Errorf("error pinging server: %w", err)
 	}
-	if authSuccess, err := a.TokenAuth(cfg.AccessToken); err != nil || !authSuccess {
-		slog.Error("Error authenticating with server", "err", err)
+	if err := a.authenticate(); err != nil {
 		return nil, fmt.Errorf("error authenticating with server: %w", err)
-	}
-	if checkAuthSuccess, err := a.CheckAuth(); err != nil || !checkAuthSuccess {
-		slog.Error("Error checking authentication", "err", err)
-		return nil, fmt.Errorf("error checking authentication: %w", err)
 	}
 	a.initPingLoop()
 
@@ -75,8 +72,32 @@ func (a *Agent) initPingLoop() {
 		t := time.NewTicker(1 * time.Second)
 		for range t.C {
 			if pingSuccess, err := a.Ping(); err != nil || !pingSuccess {
-				slog.Error("Error pinging server", "err", err)
+				slog.Error("Error pinging server", sloki.WrapError(err))
+				continue
+			}
+
+			checkAuthSuccess, err := a.CheckAuth()
+			if err != nil {
+				slog.Error("Error checking authentication", sloki.WrapError(err))
+				continue
+			}
+			if !checkAuthSuccess {
+				if err := a.authenticate(); err != nil {
+					slog.Error("Error re-authenticating with server", sloki.WrapError(err))
+				}
+				slog.Info("Re-authenticated with server")
+				continue
 			}
 		}
 	}()
+}
+
+func (a *Agent) authenticate() error {
+	if authSuccess, err := a.TokenAuth(a.accessToken); err != nil || !authSuccess {
+		return fmt.Errorf("error authenticating with server: %w", err)
+	}
+	if checkAuthSuccess, err := a.CheckAuth(); err != nil || !checkAuthSuccess {
+		return fmt.Errorf("error checking authentication: %w", err)
+	}
+	return nil
 }
