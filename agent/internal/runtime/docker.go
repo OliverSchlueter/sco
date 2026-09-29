@@ -130,6 +130,7 @@ func (r *DockerRuntime) createContainer(ctx context.Context, cfg TaskConfig) (st
 		},
 		HostConfig: &container.HostConfig{
 			PortBindings: portBindings,
+			Binds:        cfg.Volumes,
 			RestartPolicy: container.RestartPolicy{
 				Name:              container.RestartPolicyDisabled,
 				MaximumRetryCount: 0,
@@ -255,6 +256,7 @@ func (r *DockerRuntime) GetTaskInfo(ctx context.Context, taskID string) (*TaskCo
 		Image:                image,
 		EnvironmentVariables: env,
 		ExposedPorts:         exposedPorts,
+		Volumes:              result.Container.HostConfig.Binds,
 		MaxCPU:               cpu,
 		MaxMemory:            memory,
 	}, nil

@@ -38,6 +38,7 @@ func main() {
 					"ENV_VAR_1": "value1",
 				},
 				ExposedPorts: map[string]string{"80": "8071"},
+				Volumes:      []string{},
 				MaxCPU:       0.5,
 				MaxMemory:    200,
 			},
@@ -45,11 +46,14 @@ func main() {
 				ContainerName: "sco-gitea",
 				Image:         "docker.gitea.com/gitea:latest",
 				EnvironmentVariables: map[string]string{
-					"ENV_VAR_1": "valueSomething",
+					"ENV_VAR_1": "value2",
 				},
 				ExposedPorts: map[string]string{
 					"3000": "3000",
 					"22":   "2222",
+				},
+				Volumes: []string{
+					//"/Users/oliver/Desktop/gitea_data:/data",
 				},
 				MaxCPU:    0.5,
 				MaxMemory: 200,

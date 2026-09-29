@@ -82,7 +82,7 @@ func (a *Agent) reconcileTask(ctx context.Context, t runtime.TaskConfig) error {
 		}
 		restart = !t.CompareTo(current) || !imageCurrent
 		if restart {
-			slog.Info("Task configuration or image has changed, restarting task", "task", t.Name, "image_changed", !imageCurrent)
+			slog.Info("Task configuration or image has changed, restarting task", "task", t.Name)
 
 			if status != runtime.StatusStopped {
 				if err := a.rt.StopTask(ctx, t.Name); err != nil {

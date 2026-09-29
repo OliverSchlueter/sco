@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"slices"
 )
 
 // Runtime defines an interface for managing container lifecycle operations, including image management and task control.
@@ -50,6 +51,9 @@ type TaskConfig struct {
 	// ExposedPorts is a map of container port to host port.
 	ExposedPorts map[string]string
 
+	// Volumes uses Docker's source:target[:options] syntax for named volumes and host bind mounts.
+	Volumes []string
+
 	// MaxCPU is in cores.
 	MaxCPU float32
 
@@ -93,6 +97,15 @@ func (t *TaskConfig) CompareTo(other *TaskConfig) bool {
 		if other.ExposedPorts[k] != v {
 			return false
 		}
+	}
+
+	// Mount order does not change the task configuration.
+	volumes := slices.Clone(t.Volumes)
+	otherVolumes := slices.Clone(other.Volumes)
+	slices.Sort(volumes)
+	slices.Sort(otherVolumes)
+	if !slices.Equal(volumes, otherVolumes) {
+		return false
 	}
 	return true
 }

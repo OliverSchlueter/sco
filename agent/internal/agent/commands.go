@@ -83,6 +83,7 @@ func (a *Agent) GetTasks() ([]runtime.TaskConfig, error) {
 			Image:                nt.Image,
 			EnvironmentVariables: nt.EnvironmentVariables,
 			ExposedPorts:         nt.ExposedPorts,
+			Volumes:              nt.Volumes,
 			MaxCPU:               nt.MaxCPU,
 			MaxMemory:            nt.MaxMemory,
 		})

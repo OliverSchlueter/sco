@@ -69,6 +69,89 @@ func TestReconcileTask(t *testing.T) {
 	}
 }
 
+func TestReconcileTaskVolumeChanges(t *testing.T) {
+	changes := []struct {
+		name    string
+		current []string
+		desired []string
+	}{
+		{name: "adding a mount", desired: []string{"app-data:/var/lib/app"}},
+		{
+			name:    "changing a mount",
+			current: []string{"app-data:/var/lib/app"},
+			desired: []string{"app-data:/var/lib/app:ro"},
+		},
+		{name: "removing a mount", current: []string{"app-data:/var/lib/app"}},
+	}
+	for _, change := range changes {
+		for _, status := range []runtime.Status{runtime.StatusRunning, runtime.StatusStopped} {
+			t.Run(change.name+"/"+string(status), func(t *testing.T) {
+				current := runtime.TaskConfig{Name: "app", Image: "app:latest", Volumes: change.current}
+				desired := current
+				desired.Volumes = change.desired
+				rt := newReconcileRuntime(current, status, "current", "current")
+				a := &Agent{rt: rt}
+				if err := a.reconcileTask(context.Background(), desired); err != nil {
+					t.Fatal(err)
+				}
+
+				wantCalls := []string{"status app", "pull app:latest", "info app", "image app"}
+				if status == runtime.StatusRunning {
+					wantCalls = append(wantCalls, "stop app")
+				}
+				wantCalls = append(wantCalls, "remove app", "start app")
+				if !reflect.DeepEqual(rt.calls, wantCalls) {
+					t.Fatalf("calls = %v, want %v", rt.calls, wantCalls)
+				}
+				assertCurrentTask(t, rt, desired, "current")
+				if !reflect.DeepEqual(rt.tasks[desired.Name].config.Volumes, desired.Volumes) {
+					t.Fatalf("volumes = %v, want %v", rt.tasks[desired.Name].config.Volumes, desired.Volumes)
+				}
+
+				rt.calls = nil
+				if err := a.reconcileTask(context.Background(), desired); err != nil {
+					t.Fatal(err)
+				}
+				wantCalls = []string{"status app", "pull app:latest", "info app", "image app"}
+				if !reflect.DeepEqual(rt.calls, wantCalls) {
+					t.Fatalf("updated container restarted again: calls = %v", rt.calls)
+				}
+			})
+		}
+	}
+}
+
+func TestReconcileTaskVolumeReordering(t *testing.T) {
+	for _, status := range []runtime.Status{runtime.StatusRunning, runtime.StatusStopped} {
+		t.Run(string(status), func(t *testing.T) {
+			current := runtime.TaskConfig{
+				Name:    "app",
+				Image:   "app:latest",
+				Volumes: []string{"app-data:/var/lib/app", "/etc/app:/etc/app:ro"},
+			}
+			desired := current
+			desired.Volumes = []string{current.Volumes[1], current.Volumes[0]}
+			rt := newReconcileRuntime(current, status, "current", "current")
+			original := rt.tasks[current.Name]
+			a := &Agent{rt: rt}
+			if err := a.reconcileTask(context.Background(), desired); err != nil {
+				t.Fatal(err)
+			}
+			wantCalls := []string{"status app", "pull app:latest", "info app", "image app"}
+			if status == runtime.StatusStopped {
+				wantCalls = append(wantCalls, "start app")
+			}
+			if !reflect.DeepEqual(rt.calls, wantCalls) {
+				t.Fatalf("calls = %v, want %v", rt.calls, wantCalls)
+			}
+			if rt.tasks[current.Name] != original {
+				t.Fatal("container was recreated after reordering volumes")
+			}
+			assertCurrentTask(t, rt, desired, "current")
+		})
+	}
+}
+
 func TestReconcileTaskFailuresPreserveContainer(t *testing.T) {
 	cfg := runtime.TaskConfig{Name: "app", Image: "app:latest"}
 	for _, operation := range []string{"status", "pull", "info", "image"} {

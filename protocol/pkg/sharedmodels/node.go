@@ -5,6 +5,7 @@ type NodeTask struct {
 	Image                string            `json:"image"`
 	EnvironmentVariables map[string]string `json:"environment_variables"`
 	ExposedPorts         map[string]string `json:"exposed_ports"`
+	Volumes              []string          `json:"volumes"`
 
 	MaxCPU    float32 `json:"max_cpu"`
 	MaxMemory int64   `json:"max_memory"`

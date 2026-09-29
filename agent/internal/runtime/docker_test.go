@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"testing"
 
 	"github.com/containerd/errdefs"
@@ -164,6 +165,78 @@ func TestGetTaskInfoInspectionErrors(t *testing.T) {
 			info, err := rt.GetTaskInfo(context.Background(), "nginx01")
 			if info != nil || !errors.Is(err, tc.wantErr) {
 				t.Fatalf("got info=%v, err=%v; want nil, %v", info, err, tc.wantErr)
+			}
+		})
+	}
+}
+
+type creationClient struct {
+	client.SDKClient
+	createContainer func(mclient.ContainerCreateOptions) (mclient.ContainerCreateResult, error)
+}
+
+func (c *creationClient) ContainerCreate(_ context.Context, opts mclient.ContainerCreateOptions) (mclient.ContainerCreateResult, error) {
+	return c.createContainer(opts)
+}
+
+func TestCreateContainerVolumes(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		volumes []string
+	}{
+		{name: "no configured volumes"},
+		{name: "named volume", volumes: []string{"app-data:/data"}},
+		{name: "host bind mount", volumes: []string{"/srv/app/data:/data"}},
+		{name: "read-only bind and named volume", volumes: []string{"/srv/app/config:/etc/app:ro", "app-data:/data"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt := &DockerRuntime{client: &creationClient{
+				createContainer: func(opts mclient.ContainerCreateOptions) (mclient.ContainerCreateResult, error) {
+					if !reflect.DeepEqual(opts.HostConfig.Binds, tc.volumes) {
+						t.Fatalf("Docker volume bindings = %v, want %v", opts.HostConfig.Binds, tc.volumes)
+					}
+					return mclient.ContainerCreateResult{ID: "container-id"}, nil
+				},
+			}}
+			id, err := rt.createContainer(context.Background(), TaskConfig{Name: "app", Image: "app:latest", Volumes: tc.volumes})
+			if err != nil || id != "container-id" {
+				t.Fatalf("createContainer = %q, %v", id, err)
+			}
+		})
+	}
+}
+
+func TestGetTaskInfoVolumes(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		volumes []string
+	}{
+		{name: "no configured volumes"},
+		{name: "named volume and read-only bind", volumes: []string{"app-data:/data", "/srv/app/config:/etc/app:ro"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt := &DockerRuntime{client: &inspectionClient{
+				inspectContainer: func(string) (mclient.ContainerInspectResult, error) {
+					return mclient.ContainerInspectResult{Container: container.InspectResponse{
+						Config: &container.Config{
+							Image: "app:latest",
+							// Image-declared anonymous volumes are not task configuration.
+							Volumes: map[string]struct{}{"/cache": {}},
+						},
+						HostConfig: &container.HostConfig{Binds: tc.volumes},
+					}}, nil
+				},
+			}}
+			info, err := rt.GetTaskInfo(context.Background(), "app")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(info.Volumes, tc.volumes) {
+				t.Fatalf("inspected volumes = %v, want %v", info.Volumes, tc.volumes)
+			}
+			desired := TaskConfig{Name: "app", Image: "app:latest", Volumes: tc.volumes}
+			if !desired.CompareTo(info) {
+				t.Fatalf("inspected configuration %+v differs from desired %+v", info, desired)
 			}
 		})
 	}
