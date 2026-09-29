@@ -182,23 +182,23 @@ func (r *DockerRuntime) GetTaskStatus(ctx context.Context, taskID string) (Statu
 	summary, err := r.client.FindContainerByName(ctx, taskID)
 	if err != nil {
 		if err.Error() == fmt.Sprintf("container %s not found", taskID) {
-			return Unknown, nil
+			return StatusUnknown, nil
 		}
-		return Unknown, err
+		return StatusUnknown, err
 	}
 
 	// check if the container is a sco task
 	if _, exists := summary.Labels[scoServerLabel]; !exists {
-		return Unknown, nil
+		return StatusUnknown, nil
 	}
 
 	switch summary.State {
 	case container.StateRunning:
-		return Running, nil
+		return StatusRunning, nil
 	case container.StateExited:
-		return Stopped, nil
+		return StatusStopped, nil
 	default:
-		return Unknown, nil
+		return StatusUnknown, nil
 	}
 }
 
@@ -215,11 +215,11 @@ func (r *DockerRuntime) ListTasks(ctx context.Context) (map[string]Status, error
 		var status Status
 		switch summary.State {
 		case container.StateRunning:
-			status = Running
+			status = StatusRunning
 		case container.StateExited:
-			status = Stopped
+			status = StatusStopped
 		default:
-			status = Unknown
+			status = StatusUnknown
 		}
 
 		result[summary.Names[0][1:]] = status

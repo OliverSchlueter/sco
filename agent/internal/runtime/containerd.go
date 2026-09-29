@@ -126,26 +126,26 @@ func (r *ContainerdRuntime) GetTaskStatus(ctx context.Context, taskID string) (S
 
 	container, err := r.client.LoadContainer(ctx, taskID)
 	if err != nil {
-		return Unknown, err
+		return StatusUnknown, err
 	}
 
 	task, err := container.Task(ctx, nil)
 	if err != nil {
-		return Stopped, nil
+		return StatusStopped, nil
 	}
 
 	status, err := task.Status(ctx)
 	if err != nil {
-		return Unknown, err
+		return StatusUnknown, err
 	}
 
 	switch status.Status {
 	case containerd.Running:
-		return Running, nil
+		return StatusRunning, nil
 	case containerd.Stopped:
-		return Stopped, nil
+		return StatusStopped, nil
 	default:
-		return Unknown, nil
+		return StatusUnknown, nil
 	}
 }
 
@@ -172,11 +172,11 @@ func (r *ContainerdRuntime) ListTasks(ctx context.Context) (map[string]Status, e
 
 		switch status.Status {
 		case containerd.Running:
-			result[c.ID()] = Running
+			result[c.ID()] = StatusRunning
 		case containerd.Stopped:
-			result[c.ID()] = Stopped
+			result[c.ID()] = StatusStopped
 		default:
-			result[c.ID()] = Unknown
+			result[c.ID()] = StatusUnknown
 		}
 	}
 

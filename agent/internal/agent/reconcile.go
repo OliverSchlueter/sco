@@ -63,7 +63,7 @@ func (a *Agent) reconcileTask(ctx context.Context, t runtime.TaskConfig) error {
 	}
 
 	// start the task if it's not running
-	if status != runtime.Running {
+	if status != runtime.StatusRunning {
 		if err := a.rt.PullImage(ctx, t.Image); err != nil {
 			return err
 		}

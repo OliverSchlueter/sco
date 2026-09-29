@@ -39,9 +39,9 @@ type TaskConfig struct {
 type Status string
 
 const (
-	Running Status = "RUNNING"
-	Stopped Status = "STOPPED"
-	Unknown Status = "UNKNOWN"
+	StatusRunning Status = "RUNNING"
+	StatusStopped Status = "STOPPED"
+	StatusUnknown Status = "UNKNOWN"
 )
 
 // CompareTo compares two TaskConfig objects and returns true if they are equal, false otherwise.
