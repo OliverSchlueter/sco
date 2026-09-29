@@ -23,6 +23,9 @@ type TaskConfig struct {
 	// Image is the container image.
 	Image string
 
+	// EnvironmentVariables is a map of environment variables to set in the container.
+	EnvironmentVariables map[string]string
+
 	// ExposedPorts is a map of container port to host port.
 	ExposedPorts map[string]string
 
@@ -54,6 +57,12 @@ func (t *TaskConfig) CompareTo(other *TaskConfig) bool {
 	}
 	if t.MaxMemory != other.MaxMemory {
 		return false
+	}
+
+	for k, v := range t.EnvironmentVariables {
+		if other.EnvironmentVariables[k] != v {
+			return false
+		}
 	}
 
 	if len(t.ExposedPorts) != len(other.ExposedPorts) {

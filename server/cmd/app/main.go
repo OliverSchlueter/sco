@@ -34,23 +34,32 @@ func main() {
 			{
 				ContainerName: "nginx01",
 				Image:         "nginx:latest",
-				ExposedPorts:  map[string]string{"80": "8070"},
-				MaxCPU:        0.5,
-				MaxMemory:     200,
+				EnvironmentVariables: map[string]string{
+					"ENV_VAR_1": "value1",
+				},
+				ExposedPorts: map[string]string{"80": "8070"},
+				MaxCPU:       0.5,
+				MaxMemory:    200,
 			},
 			{
 				ContainerName: "nginx02",
 				Image:         "nginx:latest",
-				ExposedPorts:  map[string]string{"80": "8071"},
-				MaxCPU:        0.5,
-				MaxMemory:     200,
+				EnvironmentVariables: map[string]string{
+					"ENV_VAR_1": "value2",
+				},
+				ExposedPorts: map[string]string{"80": "8071"},
+				MaxCPU:       0.5,
+				MaxMemory:    200,
 			},
 			{
 				ContainerName: "nginx03",
 				Image:         "nginx:latest",
-				ExposedPorts:  map[string]string{"80": "8072"},
-				MaxCPU:        0.5,
-				MaxMemory:     200,
+				EnvironmentVariables: map[string]string{
+					"ENV_VAR_1": "value3",
+				},
+				ExposedPorts: map[string]string{"80": "8072"},
+				MaxCPU:       0.5,
+				MaxMemory:    200,
 			},
 		},
 	}

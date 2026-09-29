@@ -75,11 +75,12 @@ func (a *Agent) GetTasks() ([]runtime.TaskConfig, error) {
 	var tasks []runtime.TaskConfig
 	for _, nt := range nts {
 		tasks = append(tasks, runtime.TaskConfig{
-			Name:         nt.ContainerName,
-			Image:        nt.Image,
-			ExposedPorts: nt.ExposedPorts,
-			MaxCPU:       nt.MaxCPU,
-			MaxMemory:    nt.MaxMemory,
+			Name:                 nt.ContainerName,
+			Image:                nt.Image,
+			EnvironmentVariables: nt.EnvironmentVariables,
+			ExposedPorts:         nt.ExposedPorts,
+			MaxCPU:               nt.MaxCPU,
+			MaxMemory:            nt.MaxMemory,
 		})
 	}
 

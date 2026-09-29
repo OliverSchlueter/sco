@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/netip"
 	"strconv"
+	"strings"
 
 	"github.com/docker/go-sdk/client"
 	"github.com/moby/moby/api/types/container"
@@ -131,6 +132,7 @@ func (r *DockerRuntime) createContainer(ctx context.Context, cfg TaskConfig) (st
 			Labels: map[string]string{
 				scoServerLabel: string(cfgData),
 			},
+			Env: convertEnvVariables(cfg.EnvironmentVariables),
 		},
 		HostConfig: &container.HostConfig{
 			PortBindings: portBindings,
@@ -226,6 +228,41 @@ func (r *DockerRuntime) ListTasks(ctx context.Context) (map[string]Status, error
 	return result, nil
 }
 
+func (r *DockerRuntime) GetTaskInfo(ctx context.Context, taskID string) (*TaskConfig, error) {
+	result, err := r.client.ContainerInspect(ctx, taskID, mclient.ContainerInspectOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	image := result.Container.Config.Image
+	memory := result.Container.HostConfig.Memory / (1024 * 1024)
+	cpu := float32(result.Container.HostConfig.NanoCPUs) / 1e9
+
+	env := make(map[string]string)
+	for _, e := range result.Container.Config.Env {
+		parts := strings.Split(e, "=")
+		if len(parts) == 2 {
+			env[parts[0]] = parts[1]
+		}
+	}
+
+	exposedPorts := make(map[string]string)
+	for port, bindings := range result.Container.HostConfig.PortBindings {
+		if len(bindings) > 0 {
+			exposedPorts[strconv.Itoa(int(port.Num()))] = bindings[0].HostPort
+		}
+	}
+
+	return &TaskConfig{
+		Name:                 taskID,
+		Image:                image,
+		EnvironmentVariables: env,
+		ExposedPorts:         exposedPorts,
+		MaxCPU:               cpu,
+		MaxMemory:            memory,
+	}, nil
+}
+
 //func (r *DockerRuntime) GetStats(ctx context.Context, taskID string) error {
 //	data, err := r.client.ContainerStats(ctx, taskID, mclient.ContainerStatsOptions{})
 //	if err != nil {
@@ -246,30 +283,12 @@ func (r *DockerRuntime) ListTasks(ctx context.Context) (map[string]Status, error
 //	return nil
 //}
 
-func (r *DockerRuntime) GetTaskInfo(ctx context.Context, taskID string) (*TaskConfig, error) {
-	result, err := r.client.ContainerInspect(ctx, taskID, mclient.ContainerInspectOptions{})
-	if err != nil {
-		return nil, err
+func convertEnvVariables(env map[string]string) []string {
+	var result []string
+	for k, v := range env {
+		result = append(result, fmt.Sprintf("%s=%s", k, v))
 	}
-
-	image := result.Container.Config.Image
-	memory := result.Container.HostConfig.Memory / (1024 * 1024)
-	cpu := float32(result.Container.HostConfig.NanoCPUs) / 1e9
-
-	exposedPorts := make(map[string]string)
-	for port, bindings := range result.Container.HostConfig.PortBindings {
-		if len(bindings) > 0 {
-			exposedPorts[strconv.Itoa(int(port.Num()))] = bindings[0].HostPort
-		}
-	}
-
-	return &TaskConfig{
-		Name:         taskID,
-		Image:        image,
-		ExposedPorts: exposedPorts,
-		MaxCPU:       cpu,
-		MaxMemory:    memory,
-	}, nil
+	return result
 }
 
 func convertPortBindings(ports map[string]string) (map[network.Port][]network.PortBinding, error) {
